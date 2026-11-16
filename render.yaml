@@ -1,0 +1,27 @@
+# Hosts the admin website on Render as a free static site.
+# In Render: New > Blueprint > pick this repository. Nothing is built: the
+# files in admin/ are served as they are. The site holds no secret; signing
+# in and every permission are handled by Supabase.
+services:
+  - type: web
+    name: brainwake-admin
+    runtime: static
+    buildCommand: "true"
+    staticPublishPath: ./admin
+    buildFilter:
+      paths:
+        - admin/**
+        - render.yaml
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow
