@@ -58,8 +58,14 @@ Design choices:
   must be one of them**; the database itself refuses anything else.
 - **Deleting an account deletes its data** (answers, sessions, backup, AI
   usage).
-- **Admins manage content, not people's data**: the rules do not let an
-  admin read other users' answers.
+- **Two levels of admin.** An *admin* manages the question bank only and
+  cannot read other users' answers. An *owner* can do everything: manage
+  accounts, roles and plans, read usage, and change server settings and
+  keys. The first owner claims the role on the admin site; after that only
+  an owner can make another.
+- **Keys are write-only.** The Gemini key is saved through the admin site
+  into a table nobody can read through the app or the site; only the API
+  server (service key) reads it.
 
 ## Paid features (groundwork only)
 

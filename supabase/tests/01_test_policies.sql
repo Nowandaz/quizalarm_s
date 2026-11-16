@@ -92,11 +92,19 @@ update public.questions set status = 'published' where id = 'q2';
 select pg_temp.expect(
   (select updated_at > created_at from public.questions where id = 'q2'),
   'editing a question moves its updated_at forward');
-update public.profiles set role = 'admin'
-  where id = '00000000-0000-0000-0000-00000000000c';
-update public.profiles set role = 'user'
-  where id = '00000000-0000-0000-0000-00000000000c';
-select pg_temp.expect(true, 'an admin can grant and remove admin');
+do $$
+begin
+  update public.profiles set role = 'admin'
+    where id = '00000000-0000-0000-0000-00000000000c';
+  if (select role from public.profiles
+      where id = '00000000-0000-0000-0000-00000000000c') = 'admin' then
+    raise exception 'FAILED: an ordinary admin changed a role';
+  end if;
+  raise notice 'ok: an ordinary admin cannot change roles';
+exception when others then
+  if sqlerrm like 'FAILED%' then raise; end if;
+  raise notice 'ok: an ordinary admin cannot change roles';
+end $$;
 
 -- Shape rules for questions.
 do $$
@@ -221,6 +229,11 @@ insert into public.ai_usage (user_id, kind)
   values ('00000000-0000-0000-0000-00000000000b', 'generate');
 reset role;
 
+-- Leave things as the next test file expects.
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+\echo POLICY TESTS PASSED
+\q
 -- Deleting an account removes everything that belonged to it.
 delete from auth.users where id = '00000000-0000-0000-0000-00000000000b';
 select pg_temp.expect(

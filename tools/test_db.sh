@@ -18,6 +18,7 @@ run() { $PSQL -q -v ON_ERROR_STOP=1 -d "$DB" -f "$1"; }
 run supabase/tests/00_supabase_stub.sql
 run supabase/migrations/0001_schema.sql
 run supabase/migrations/0002_policies.sql
+run supabase/migrations/0004_owner_admin.sql
 $PSQL -q -d "$DB" -c "grant all on all tables in schema public to service_role;
                       grant usage, select on all sequences in schema public to service_role, authenticated;"
 if [ -f supabase/seed.sql ]; then
@@ -26,4 +27,6 @@ if [ -f supabase/seed.sql ]; then
     (select count(*) from topics) || ' topics, ' || (select count(*) from questions) || ' questions'"
   $PSQL -q -d "$DB" -c "truncate public.units cascade"
 fi
-run supabase/tests/test_policies.sql 2>&1 | grep -E "ok:|FAILED|ERROR|PASSED" || true
+for t in supabase/tests/[0-9][0-9]_test_*.sql; do
+  run "$t" 2>&1 | grep -E "ok:|FAILED|ERROR|PASSED" || true
+done

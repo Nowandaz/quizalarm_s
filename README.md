@@ -8,17 +8,59 @@ that makes AI calls.
 |---|---|---|
 | Database, accounts, picture storage | Supabase project `zsplxgvizlndnofsokxw` | **Live**: tables, security rules, picture bucket, 70 seed questions and their 10 pictures |
 | API (AI calls with the Gemini key, per-user limits) | Azure VM | Not started |
-| Admin website (manage questions and pictures) | Azure VM | Not started |
+| Admin website (questions, pictures, accounts, settings, keys) | Runs locally for now; Azure VM later | **Built**, in `admin/` |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit.
+
+## Admin website
+
+Plain HTML and JavaScript in `admin/`, no build step. To run it on your
+computer:
+
+```bash
+cd admin
+python -m http.server 8095
+```
+
+Then open http://localhost:8095.
+
+**First time:** create an account with your email, open the confirmation
+link Supabase emails you, sign in, and press **Make me the owner**. That
+button only exists while the system has no owner.
+
+| Role | Can do |
+|---|---|
+| Owner | Everything: question bank, accounts (roles, plans, delete), AI settings, keys |
+| Admin | Question bank only: units, topics, questions, pictures, import / export |
+| User  | Nothing here (the site tells them so) |
+
+What each page does:
+
+- **Dashboard**: counts of units, topics, questions, drafts, accounts,
+  recent activity and today's AI calls.
+- **Question bank**: add / edit / delete / restore units, topics and
+  questions; mark a unit premium; 5-option or typed questions with
+  accepted alternatives, explanation, picture upload and draft status;
+  import or export a unit as a JSON file in the app's bank format.
+- **Accounts** (owner): everyone who signed up, with search; change a
+  role or plan; delete an account and its data.
+- **Settings** (owner): daily AI limits, the AI model, an AI on/off
+  switch, and the Gemini key (can be replaced or removed, never read
+  back).
+
+`admin/config.js` holds the project address and its publishable key.
+Both are public by design; the database rules decide what a signed-in
+person may do.
 
 ## Layout
 
 ```
+admin/                 the admin website
 supabase/migrations/   the database, in order:
   0001_schema.sql        tables
   0002_policies.sql      who may read / change what
   0003_storage.sql       bucket for question pictures
+  0004_owner_admin.sql   owner role, account management, settings, keys
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL
 tools/make_seed.py     regenerates seed.sql from the app's JSON banks
