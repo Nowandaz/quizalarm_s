@@ -7,7 +7,7 @@ that makes AI calls.
 | Piece | Runs on | Status |
 |---|---|---|
 | Database, accounts, picture storage | Supabase project `zsplxgvizlndnofsokxw` | **Live**: tables, security rules, picture bucket, 70 seed questions and their 10 pictures |
-| API (AI calls with the Gemini key, per-user limits) | Azure VM | Not started |
+| API (AI calls through the saved providers in turn, per-user limits) | Azure VM | Not started |
 | Admin website (questions, pictures, accounts, settings, keys) | Runs locally for now; Azure VM later | **Built**, in `admin/` |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit.
@@ -44,9 +44,17 @@ What each page does:
   import or export a unit as a JSON file in the app's bank format.
 - **Accounts** (owner): everyone who signed up, with search; change a
   role or plan; delete an account and its data.
-- **Settings** (owner): daily AI limits, the AI model, an AI on/off
-  switch, and the Gemini key (can be replaced or removed, never read
-  back).
+- **Settings** (owner), in two tabs. *AI providers*: add as many as you
+  like (Gemini, Groq, OpenAI, OpenRouter, Anthropic, or anything that
+  speaks the OpenAI format), each with its own key, model and weight;
+  switch them on or off; test a key before saving. The server uses the
+  switched-on ones in turn (weighted round robin) and moves to the next
+  if one fails. Keys can be replaced or removed, never read back.
+  *AI limits*: daily limits for free and premium users, and an AI
+  on/off switch.
+
+To look at the site without signing in or touching real data, open
+`admin/preview.html`: the same pages on made-up data kept in memory.
 
 `admin/config.js` holds the project address and its publishable key.
 Both are public by design; the database rules decide what a signed-in
@@ -61,6 +69,7 @@ supabase/migrations/   the database, in order:
   0002_policies.sql      who may read / change what
   0003_storage.sql       bucket for question pictures
   0004_owner_admin.sql   owner role, account management, settings, keys
+  0005_ai_providers.sql  AI providers used in turn (round robin)
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL
 tools/make_seed.py     regenerates seed.sql from the app's JSON banks
@@ -103,4 +112,5 @@ where id = (select id from auth.users where email = 'you@example.com');
 ## Secrets
 
 No key or password belongs in this repository. The Supabase service key
-and the Gemini key live only in the API's `.env` on the server.
+lives only in the API's `.env` on the server. AI provider keys are saved
+through the admin site into a table only the server can read.

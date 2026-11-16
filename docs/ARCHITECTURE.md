@@ -13,9 +13,10 @@
       ▼                              │
   BrainWake API  ────────────────────┘
   (Azure VM)      checks who is asking, enforces the daily AI limit,
-      │           calls Gemini with the key only the server has
+      │           picks the next AI provider in turn (keys only the server
+      │           can read) and falls through to another if one fails
       ▼
-   Gemini
+   Gemini / Groq / OpenAI / Anthropic / ...
 
   Admin website (Azure VM) ──► Supabase, signed in as an admin
 ```
@@ -63,9 +64,12 @@ Design choices:
   accounts, roles and plans, read usage, and change server settings and
   keys. The first owner claims the role on the admin site; after that only
   an owner can make another.
-- **Keys are write-only.** The Gemini key is saved through the admin site
-  into a table nobody can read through the app or the site; only the API
-  server (service key) reads it.
+- **Keys are write-only.** AI provider keys are saved through the admin
+  site into a table (`ai_providers`) nobody can read through the app or
+  the site; the site only ever sees the last four characters. Only the API
+  server (service key) reads them, through `pick_ai_provider()`, which
+  hands out the switched-on providers in weighted round-robin order.
+  `report_ai_provider_error()` records a failure so the owner sees it.
 
 ## Paid features (groundwork only)
 

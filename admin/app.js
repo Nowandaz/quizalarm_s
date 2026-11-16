@@ -2,7 +2,8 @@
 // web server. It signs in through Supabase and everything it does is checked
 // by the database rules, so this code holds no secret and grants no power.
 //
-// Sections: helpers, sign-in, shell, dashboard, question bank, users, settings.
+// Sections: helpers, sign-in, shell, dashboard, question bank, accounts,
+// settings (AI providers, AI limits).
 'use strict';
 
 const CONFIG = window.BRAINWAKE_CONFIG;
@@ -28,6 +29,41 @@ function h(tag, attrs, ...children) {
     el.append(child.nodeType ? child : document.createTextNode(String(child)));
   }
   return el;
+}
+
+/** Replaces an element's content, skipping empty values (so `cond && el`
+ *  can be used in the list without printing "false"). */
+function fill(el, ...children) {
+  el.replaceChildren(...children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false && c !== ''));
+}
+
+// Small line icons (drawn here so the site needs no icon files).
+const ICONS = {
+  home: 'M3 11l9-8 9 8M5 10v10h14V10',
+  book: 'M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM4 19V5M9 7h6',
+  users: 'M16 19v-1a4 4 0 00-4-4H7a4 4 0 00-4 4v1M9.5 10a3.5 3.5 0 100-7 3.5 3.5 0 000 7M21 19v-1a4 4 0 00-3-3.8M15.5 3.2a3.5 3.5 0 010 6.6',
+  settings: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4',
+  plus: 'M12 5v14M5 12h14',
+  edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6',
+  spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.7 2 .2.1 2 .7-2 .7-.2.1-.7 2-.7-2-.2-.1-2-.7 2-.7.2-.1z',
+  image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M9 9.5a1 1 0 100-2 1 1 0 000 2',
+  upload: 'M12 16V4M7 9l5-5 5 5M4 20h16',
+  download: 'M12 4v12M7 11l5 5 5-5M4 20h16',
+  check: 'M5 12l5 5 9-10',
+  test: 'M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3M8 15h8',
+  layers: 'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5',
+  gauge: 'M4 18a8 8 0 1116 0M12 18l4-6',
+};
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', ICONS[name] || '');
+  svg.append(path);
+  return svg;
 }
 
 function toast(message, bad = false) {
@@ -71,7 +107,7 @@ function when(value) {
 
 function imageUrl(path) {
   if (!path) return '';
-  if (/^https?:/.test(path)) return path;
+  if (/^(https?:|data:)/.test(path)) return path;
   return `${CONFIG.supabaseUrl}/storage/v1/object/public/${CONFIG.imageBucket}/${path}`;
 }
 
@@ -98,7 +134,17 @@ function confirmDialog(title, body, actionLabel, action) {
 }
 
 function field(label, input, hint) {
-  return h('div', { class: 'field' }, h('label', {}, label), input, hint && h('div', { class: 'muted small' }, hint));
+  return h('div', { class: 'field' }, h('label', {}, label), input, hint && h('div', { class: 'muted small', style: 'margin-top:4px' }, hint));
+}
+
+function toggle(checked, onchange, title) {
+  return h('label', { class: 'switch', title: title || '' }, h('input', { type: 'checkbox', checked, onchange }), h('span', {}));
+}
+
+function pageHead(title, subtitle, ...actions) {
+  return h('div', { class: 'page-head' },
+    h('div', {}, h('h1', {}, title), subtitle && h('p', { class: 'muted', style: 'margin:0' }, subtitle)),
+    h('div', { class: 'row' }, actions));
 }
 
 // ------------------------------------------------------------------ session
@@ -121,7 +167,7 @@ async function start() {
   try {
     await loadProfile();
   } catch (error) {
-    app.replaceChildren(h('p', { class: 'center' }, `Could not reach the server: ${error.message}`));
+    fill(app, h('p', { class: 'center' }, `Could not reach the server: ${error.message}`));
     return;
   }
   render();
@@ -145,15 +191,15 @@ function renderSignIn() {
   let creating = false;
   const email = h('input', { type: 'email', autocomplete: 'email', placeholder: 'you@example.com' });
   const password = h('input', { type: 'password', autocomplete: 'current-password' });
-  const submit = h('button', { class: 'primary', style: 'width:100%' });
-  const toggle = h('a', {});
+  const submit = h('button', { class: 'primary', style: 'width:100%;justify-content:center' });
+  const switchMode = h('a', {});
   const note = h('p', { class: 'muted small' });
 
   const refresh = () => {
     submit.textContent = creating ? 'Create account' : 'Sign in';
-    toggle.textContent = creating ? 'I already have an account' : 'Create an account';
+    switchMode.textContent = creating ? 'I already have an account' : 'Create an account';
   };
-  toggle.addEventListener('click', () => { creating = !creating; refresh(); });
+  switchMode.addEventListener('click', () => { creating = !creating; refresh(); });
   refresh();
 
   const go = async () => {
@@ -178,7 +224,7 @@ function renderSignIn() {
   submit.addEventListener('click', go);
   password.addEventListener('keydown', (event) => { if (event.key === 'Enter') go(); });
 
-  app.replaceChildren(h('div', { class: 'auth' },
+  fill(app, h('div', { class: 'auth' },
     h('h1', {}, `${CONFIG.appName} admin`),
     h('p', { class: 'muted' }, 'Sign in to manage the question bank.'),
     h('div', { class: 'card' },
@@ -187,7 +233,7 @@ function renderSignIn() {
       submit,
       note,
       h('div', { class: 'row spread small', style: 'margin-top:10px' },
-        toggle,
+        switchMode,
         h('a', { onclick: async () => {
           if (!email.value.trim()) { toast('Type your email first', true); return; }
           await attempt(async () => ok(await db.auth.resetPasswordForEmail(email.value.trim(), {
@@ -195,7 +241,7 @@ function renderSignIn() {
           })), 'Password reset email sent');
         } }, 'Forgot password?')),
       h('div', { class: 'divider' }, 'or'),
-      h('button', { style: 'width:100%', onclick: () => attempt(async () => ok(await db.auth.signInWithOAuth({
+      h('button', { style: 'width:100%;justify-content:center', onclick: () => attempt(async () => ok(await db.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: location.origin + location.pathname },
       }))) }, 'Continue with Google'))));
@@ -203,11 +249,11 @@ function renderSignIn() {
 
 function renderNewPassword() {
   const password = h('input', { type: 'password', autocomplete: 'new-password' });
-  app.replaceChildren(h('div', { class: 'auth' },
+  fill(app, h('div', { class: 'auth' },
     h('h1', {}, 'Choose a new password'),
     h('div', { class: 'card' },
       field('New password', password, 'At least 6 characters.'),
-      h('button', { class: 'primary', style: 'width:100%', onclick: async () => {
+      h('button', { class: 'primary', style: 'width:100%;justify-content:center', onclick: async () => {
         const done = await attempt(async () => ok(await db.auth.updateUser({ password: password.value })), 'Password changed');
         if (done) start();
       } }, 'Save password'))));
@@ -217,7 +263,7 @@ async function renderNotAdmin() {
   const box = h('div', { class: 'card stack' },
     h('p', {}, `Signed in as ${state.user.email}.`),
     h('p', { class: 'muted' }, 'This account is not an admin. Ask the owner to give it admin access.'));
-  app.replaceChildren(h('div', { class: 'auth' }, h('h1', {}, `${CONFIG.appName} admin`), box,
+  fill(app, h('div', { class: 'auth' }, h('h1', {}, `${CONFIG.appName} admin`), box,
     h('p', { style: 'margin-top:12px' }, h('a', { onclick: () => db.auth.signOut() }, 'Sign out'))));
 
   // First set-up: while nobody owns the system, the signed-in person can.
@@ -241,27 +287,32 @@ function route() {
 
 function renderShell() {
   const { page, a, b } = route();
-  const link = (name, label) => h('a', { class: page === name ? 'nav on' : 'nav', href: `#/${name}` }, label);
+  const link = (name, label, iconName) => h('a', { class: page === name ? 'nav on' : 'nav', href: `#/${name}` }, icon(iconName), label);
   const main = h('div', { class: 'main' }, h('p', { class: 'muted' }, 'Loading...'));
+  const name = (state.profile && state.profile.display_name) || state.user.email;
 
-  app.replaceChildren(h('div', { class: 'shell' },
-    h('div', { class: 'side' },
-      h('div', { class: 'brand' }, CONFIG.appName),
-      link('dashboard', 'Dashboard'),
-      link('bank', 'Question bank'),
-      isOwner() && link('users', 'Accounts'),
-      isOwner() && link('settings', 'Settings'),
-      h('div', { class: 'who' },
-        h('div', {}, state.user.email),
-        h('div', { class: 'muted' }, isOwner() ? 'Owner' : 'Admin'),
-        h('a', { onclick: () => db.auth.signOut() }, 'Sign out'))),
-    main));
+  fill(app, 
+    CONFIG.demo && h('div', { class: 'demo-banner' }, 'Preview with made-up data. Nothing here is saved.'),
+    h('div', { class: 'shell' },
+      h('div', { class: 'side' },
+        h('div', { class: 'brand' }, CONFIG.appName),
+        h('div', { class: 'brand-sub' }, 'Admin'),
+        link('dashboard', 'Dashboard', 'home'),
+        link('bank', 'Question bank', 'book'),
+        isOwner() && link('users', 'Accounts', 'users'),
+        isOwner() && link('settings', 'Settings', 'settings'),
+        h('div', { class: 'who' },
+          h('div', { style: 'font-weight:700' }, name),
+          h('div', { class: 'row spread', style: 'margin-top:6px' },
+            h('span', { class: 'pill accent' }, isOwner() ? 'Owner' : 'Admin'),
+            h('a', { onclick: () => db.auth.signOut() }, 'Sign out')))),
+      main));
 
   const pages = {
     dashboard: () => pageDashboard(main),
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
-    settings: () => (isOwner() ? pageSettings(main) : pageDashboard(main)),
+    settings: () => (isOwner() ? pageSettings(main, a) : pageDashboard(main)),
   };
   attempt(pages[page] || pages.dashboard);
 }
@@ -270,21 +321,37 @@ function renderShell() {
 
 async function pageDashboard(main) {
   const stats = ok(await db.rpc('admin_stats'));
-  const card = (value, label) => h('div', { class: 'card stat' }, h('b', {}, value ?? 0), h('span', {}, label));
-  main.replaceChildren(
-    h('h1', {}, 'Dashboard'),
-    h('p', { class: 'muted' }, 'What is in the bank and how it is being used.'),
-    h('h2', { style: 'margin-top:18px' }, 'Question bank'),
-    h('div', { class: 'grid' },
-      card(stats.units, 'Units'), card(stats.topics, 'Topics'),
-      card(stats.questions, 'Questions'), card(stats.with_pictures, 'With a picture'),
-      card(stats.drafts, 'Drafts (hidden from the app)')),
-    h('h2', { style: 'margin-top:22px' }, 'People'),
-    h('div', { class: 'grid' },
-      card(stats.users, 'Accounts'), card(stats.premium_users, 'Premium'),
-      card(stats.active_users_7d, 'Active in the last 7 days'),
-      card(stats.answers_7d, 'Answers in the last 7 days'),
-      card(stats.ai_calls_today, 'AI calls today')));
+  const providers = isOwner() ? ok(await db.rpc('admin_list_ai_providers')) : null;
+  const card = (iconName, value, label) => h('div', { class: 'card stat' },
+    h('div', { class: 'ic' }, icon(iconName)), h('div', {}, h('b', {}, value ?? 0), h('span', {}, label)));
+  const name = (state.profile && state.profile.display_name) || state.user.email.split('@')[0];
+
+  const active = providers ? providers.filter((p) => p.enabled) : [];
+  fill(main, 
+    pageHead(`Welcome, ${name}`, 'What is in the bank and how it is being used.',
+      h('button', { class: 'primary', onclick: () => { location.hash = '#/bank'; } }, icon('plus'), 'Add questions')),
+
+    providers && active.length === 0 && h('div', { class: 'card row', style: 'border-color:var(--bad)' },
+      icon('spark'),
+      h('div', { class: 'grow' }, h('b', {}, 'No AI provider is switched on'),
+        h('div', { class: 'muted small' }, 'AI features in the app (new questions, the tutor) will not work until you add one.')),
+      h('button', { onclick: () => { location.hash = '#/settings/providers'; } }, 'Add a provider')),
+
+    h('div', { class: 'section' }, h('h2', {}, 'Question bank'),
+      h('div', { class: 'grid' },
+        card('layers', stats.units, 'Units'), card('book', stats.topics, 'Topics'),
+        card('check', stats.questions, 'Questions'), card('image', stats.with_pictures, 'With a picture'),
+        card('edit', stats.drafts, 'Drafts (hidden)'))),
+    h('div', { class: 'section' }, h('h2', {}, 'People'),
+      h('div', { class: 'grid' },
+        card('users', stats.users, 'Accounts'), card('spark', stats.premium_users, 'Premium'),
+        card('gauge', stats.active_users_7d, 'Active, last 7 days'),
+        card('check', stats.answers_7d, 'Answers, last 7 days'))),
+    h('div', { class: 'section' }, h('h2', {}, 'AI'),
+      h('div', { class: 'grid' },
+        card('spark', stats.ai_calls_today, 'AI calls today'),
+        providers && card('layers', active.length, `Provider${active.length === 1 ? '' : 's'} switched on`),
+        providers && card('gauge', providers.reduce((n, p) => n + Number(p.uses), 0), 'AI calls served in total'))));
 }
 
 // ------------------------------------------------------------ question bank
@@ -292,33 +359,35 @@ async function pageDashboard(main) {
 async function pageBank(main) {
   const units = ok(await db.from('units').select('*').order('sort_order').order('name'));
   const topics = ok(await db.from('topics').select('id, unit_id, deleted_at'));
-  const questions = ok(await db.from('questions').select('id, topic_id, deleted_at'));
+  const questions = ok(await db.from('questions').select('id, topic_id, status, image_path, deleted_at'));
   const liveTopics = topics.filter((t) => !t.deleted_at);
-  const count = (unitId) => {
+  const of = (unitId) => {
     const ids = new Set(liveTopics.filter((t) => t.unit_id === unitId).map((t) => t.id));
-    return [ids.size, questions.filter((q) => !q.deleted_at && ids.has(q.topic_id)).length];
+    const qs = questions.filter((q) => !q.deleted_at && ids.has(q.topic_id));
+    return { topics: ids.size, questions: qs.length, drafts: qs.filter((q) => q.status === 'draft').length, pictures: qs.filter((q) => q.image_path).length };
   };
 
-  main.replaceChildren(
-    h('div', { class: 'row spread' },
-      h('div', {}, h('h1', {}, 'Question bank'), h('p', { class: 'muted' }, 'Units, their topics and questions. Changes reach the app the next time it syncs.')),
-      h('div', { class: 'row' },
-        h('button', { onclick: () => importDialog() }, 'Import a file'),
-        h('button', { class: 'primary', onclick: () => unitDialog(null, units.length) }, 'Add unit'))),
-    h('div', { class: 'card table-wrap', style: 'margin-top:14px;padding:6px' },
-      h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'Unit'), h('th', {}, 'Topics'), h('th', {}, 'Questions'), h('th', {}, 'Access'), h('th', {}, 'Order'), h('th', {}))),
-        h('tbody', {}, units.map((u) => {
-          const [nTopics, nQuestions] = count(u.id);
-          return h('tr', { class: u.deleted_at ? 'click gone' : 'click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(u.id)}`; } },
-            h('td', {}, h('b', {}, u.name), u.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted'),
-              u.description && h('div', { class: 'muted small' }, u.description)),
-            h('td', {}, nTopics), h('td', {}, nQuestions),
-            h('td', {}, u.premium ? h('span', { class: 'pill accent' }, 'Premium') : h('span', { class: 'pill' }, 'Free')),
-            h('td', {}, u.sort_order),
-            h('td', {}, h('button', { class: 'small', onclick: (e) => { e.stopPropagation(); unitDialog(u); } }, 'Edit')));
-        }),
-        units.length === 0 && h('tr', {}, h('td', { colspan: 6, class: 'muted' }, 'No units yet. Add one, or import a bank file.'))))));
+  fill(main, 
+    pageHead('Question bank', 'Units, their topics and questions. Changes reach the app the next time it syncs.',
+      h('button', { onclick: () => importDialog() }, icon('upload'), 'Import a file'),
+      h('button', { class: 'primary', onclick: () => unitDialog(null, units.length) }, icon('plus'), 'Add unit')),
+    units.length === 0 && h('div', { class: 'card center muted' }, 'No units yet. Add one, or import a bank file.'),
+    h('div', { class: 'grid wide' }, units.map((u) => {
+      const n = of(u.id);
+      return h('div', { class: u.deleted_at ? 'card click gone' : 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(u.id)}`; } },
+        h('div', { class: 'row spread' },
+          h('h3', {}, u.name),
+          h('div', { class: 'row' },
+            u.deleted_at && h('span', { class: 'pill bad' }, 'Deleted'),
+            u.premium ? h('span', { class: 'pill accent' }, 'Premium') : h('span', { class: 'pill' }, 'Free'),
+            h('button', { class: 'icon-btn', title: 'Edit unit', onclick: (e) => { e.stopPropagation(); unitDialog(u); } }, icon('edit')))),
+        h('p', { class: 'muted small', style: 'min-height:20px;margin:6px 0 12px' }, u.description || 'No description.'),
+        h('div', { class: 'row small' },
+          h('span', {}, h('b', {}, n.topics), ' topics'),
+          h('span', {}, h('b', {}, n.questions), ' questions'),
+          n.pictures > 0 && h('span', { class: 'muted' }, `${n.pictures} with a picture`),
+          n.drafts > 0 && h('span', { class: 'pill' }, `${n.drafts} draft${n.drafts === 1 ? '' : 's'}`)));
+    })));
 }
 
 function unitDialog(unit, nextOrder = 0) {
@@ -359,30 +428,33 @@ async function freeId(table, base) {
 
 async function pageUnit(main, unitId) {
   const unit = ok(await db.from('units').select('*').eq('id', unitId))[0];
-  if (!unit) { main.replaceChildren(h('p', {}, 'That unit does not exist.')); return; }
+  if (!unit) { fill(main, h('p', {}, 'That unit does not exist.')); return; }
   const topics = ok(await db.from('topics').select('*').eq('unit_id', unitId).order('sort_order').order('name'));
-  const questions = ok(await db.from('questions').select('id, topic_id, status, deleted_at').in('topic_id', topics.map((t) => t.id).concat('-')));
+  const questions = ok(await db.from('questions').select('id, topic_id, status, image_path, deleted_at').in('topic_id', topics.map((t) => t.id).concat('-')));
   const of = (topicId) => questions.filter((q) => q.topic_id === topicId && !q.deleted_at);
+  const most = Math.max(1, ...topics.map((t) => of(t.id).length));
 
-  main.replaceChildren(
+  fill(main, 
     h('div', { class: 'crumbs' }, h('a', { href: '#/bank' }, 'Question bank'), ' / ', unit.name),
-    h('div', { class: 'row spread' },
-      h('div', {}, h('h1', {}, unit.name, unit.premium && h('span', { class: 'pill accent', style: 'margin-left:10px;vertical-align:middle' }, 'Premium')),
-        h('p', { class: 'muted' }, unit.description || 'No description.')),
-      h('div', { class: 'row' },
-        h('button', { onclick: () => exportUnit(unit) }, 'Export'),
-        h('button', { onclick: () => unitDialog(unit) }, 'Edit unit'),
-        h('button', { class: 'primary', onclick: () => topicDialog(unit, null, topics.length) }, 'Add topic'))),
-    h('div', { class: 'card table-wrap', style: 'margin-top:14px;padding:6px' },
-      h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'Topic'), h('th', {}, 'Questions'), h('th', {}, 'Drafts'), h('th', {}, 'Order'), h('th', {}))),
-        h('tbody', {}, topics.map((t) => h('tr', { class: t.deleted_at ? 'click gone' : 'click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(unit.id)}/${encodeURIComponent(t.id)}`; } },
-          h('td', {}, h('b', {}, t.name), t.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted')),
-          h('td', {}, of(t.id).length),
-          h('td', {}, of(t.id).filter((q) => q.status === 'draft').length),
-          h('td', {}, t.sort_order),
-          h('td', {}, h('button', { class: 'small', onclick: (e) => { e.stopPropagation(); topicDialog(unit, t); } }, 'Edit')))),
-        topics.length === 0 && h('tr', {}, h('td', { colspan: 5, class: 'muted' }, 'No topics yet.'))))));
+    pageHead([unit.name, unit.premium && h('span', { class: 'pill accent', style: 'margin-left:10px;vertical-align:middle' }, 'Premium')],
+      unit.description || 'No description.',
+      h('button', { onclick: () => exportUnit(unit) }, icon('download'), 'Export'),
+      h('button', { onclick: () => unitDialog(unit) }, icon('edit'), 'Edit unit'),
+      h('button', { class: 'primary', onclick: () => topicDialog(unit, null, topics.length) }, icon('plus'), 'Add topic')),
+    topics.length === 0 && h('div', { class: 'card center muted' }, 'No topics yet.'),
+    h('div', { class: 'list' }, topics.map((t) => {
+      const qs = of(t.id);
+      const drafts = qs.filter((q) => q.status === 'draft').length;
+      return h('div', { class: t.deleted_at ? 'card click gone' : 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(unit.id)}/${encodeURIComponent(t.id)}`; } },
+        h('div', { class: 'row spread' },
+          h('h3', {}, t.name, t.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted')),
+          h('div', { class: 'row small' },
+            h('span', {}, h('b', {}, qs.length), ' questions'),
+            drafts > 0 && h('span', { class: 'pill' }, `${drafts} draft${drafts === 1 ? '' : 's'}`),
+            qs.some((q) => q.image_path) && h('span', { class: 'pill accent' }, 'Pictures'),
+            h('button', { class: 'icon-btn', title: 'Edit topic', onclick: (e) => { e.stopPropagation(); topicDialog(unit, t); } }, icon('edit')))),
+        h('div', { class: 'bar', style: 'margin-top:10px', title: 'Share of this unit\'s questions' }, h('i', { style: `width:${Math.round(100 * qs.length / most)}%` })));
+    })));
 }
 
 function topicDialog(unit, topic, nextOrder = 0) {
@@ -412,49 +484,68 @@ function topicDialog(unit, topic, nextOrder = 0) {
 async function pageTopic(main, unitId, topicId) {
   const unit = ok(await db.from('units').select('*').eq('id', unitId))[0];
   const topic = ok(await db.from('topics').select('*').eq('id', topicId))[0];
-  if (!unit || !topic) { main.replaceChildren(h('p', {}, 'That topic does not exist.')); return; }
+  if (!unit || !topic) { fill(main, h('p', {}, 'That topic does not exist.')); return; }
   const questions = ok(await db.from('questions').select('*').eq('topic_id', topicId).order('created_at'));
 
   let filter = 'live';
   let search = '';
-  const body = h('tbody', {});
-  const counter = h('span', { class: 'muted small' });
+  const list = h('div', { class: 'list' });
+  const chips = h('div', { class: 'chips' });
+  const live = questions.filter((x) => !x.deleted_at);
+  const FILTERS = [
+    ['live', 'All', live.length],
+    ['published', 'Published', live.filter((x) => x.status === 'published').length],
+    ['draft', 'Drafts', live.filter((x) => x.status === 'draft').length],
+    ['picture', 'With a picture', live.filter((x) => x.image_path).length],
+    ['deleted', 'Deleted', questions.length - live.length],
+  ];
 
   const draw = () => {
+    fill(chips, ...FILTERS.map(([key, label, n]) => h('button', { class: filter === key ? 'chip on' : 'chip', onclick: () => { filter = key; draw(); } }, `${label} (${n})`)));
     const q = search.trim().toLowerCase();
     const rows = questions.filter((x) => {
-      if (filter === 'live' && x.deleted_at) return false;
-      if (filter === 'draft' && (x.deleted_at || x.status !== 'draft')) return false;
-      if (filter === 'picture' && (x.deleted_at || !x.image_path)) return false;
-      if (filter === 'deleted' && !x.deleted_at) return false;
+      if (filter === 'deleted') { if (!x.deleted_at) return false; } else if (x.deleted_at) return false;
+      if (filter === 'published' && x.status !== 'published') return false;
+      if (filter === 'draft' && x.status !== 'draft') return false;
+      if (filter === 'picture' && !x.image_path) return false;
       return !q || x.text.toLowerCase().includes(q) || x.answer.toLowerCase().includes(q);
     });
-    counter.textContent = `${rows.length} shown`;
-    body.replaceChildren(...rows.map((x) => h('tr', { class: x.deleted_at ? 'click gone' : 'click', onclick: () => questionDialog(topic, x) },
-      h('td', {}, h('span', { class: 'pill' }, x.type === 'mcq' ? 'Choice' : 'Typed')),
-      h('td', {}, x.text, h('div', { class: 'muted small' }, `Answer: ${x.answer}`)),
-      h('td', {}, x.image_path ? h('span', { class: 'pill accent' }, 'Picture') : ''),
-      h('td', {}, x.deleted_at ? h('span', { class: 'pill bad' }, 'Deleted')
-        : x.status === 'draft' ? h('span', { class: 'pill' }, 'Draft') : h('span', { class: 'pill ok' }, 'Published')))),
-    rows.length === 0 ? h('tr', {}, h('td', { colspan: 4, class: 'muted' }, 'No questions match.')) : '');
+    fill(list, ...rows.map((x, index) => questionCard(topic, x, index + 1)),
+      rows.length === 0 ? h('div', { class: 'card center muted' }, 'No questions match.') : '');
   };
 
-  const filterSelect = h('select', { style: 'width:auto', onchange: (e) => { filter = e.target.value; draw(); } },
-    h('option', { value: 'live' }, 'All current'), h('option', { value: 'draft' }, 'Drafts'),
-    h('option', { value: 'picture' }, 'With a picture'), h('option', { value: 'deleted' }, 'Deleted'));
-
-  main.replaceChildren(
+  fill(main, 
     h('div', { class: 'crumbs' }, h('a', { href: '#/bank' }, 'Question bank'), ' / ',
       h('a', { href: `#/bank/${encodeURIComponent(unit.id)}` }, unit.name), ' / ', topic.name),
-    h('div', { class: 'row spread' },
-      h('h1', {}, topic.name),
-      h('button', { class: 'primary', onclick: () => questionDialog(topic, null) }, 'Add question')),
-    h('div', { class: 'row', style: 'margin:12px 0' },
-      h('input', { type: 'search', class: 'grow', placeholder: 'Search questions and answers', oninput: (e) => { search = e.target.value; draw(); } }),
-      filterSelect, counter),
-    h('div', { class: 'card table-wrap', style: 'padding:6px' },
-      h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Type'), h('th', {}, 'Question'), h('th', {}), h('th', {}, 'Status'))), body)));
+    pageHead(topic.name, `${live.length} question${live.length === 1 ? '' : 's'} in ${unit.name}`,
+      h('button', { class: 'primary', onclick: () => questionDialog(topic, null) }, icon('plus'), 'Add question')),
+    h('div', { class: 'row', style: 'margin-bottom:12px' },
+      h('input', { type: 'search', class: 'grow', style: 'max-width:420px', placeholder: 'Search questions and answers', oninput: (e) => { search = e.target.value; draw(); } }),
+      chips),
+    list);
   draw();
+}
+
+/** One question as a readable card: picture, text, options with the right
+ *  one marked (or the typed answer), and the start of the explanation. */
+function questionCard(topic, x, number) {
+  return h('div', { class: x.deleted_at ? 'card click gone q' : 'card click q', onclick: () => questionDialog(topic, x) },
+    h('div', { class: 'num' }, number),
+    h('div', { class: 'grow' },
+      h('div', { class: 'row', style: 'margin-bottom:6px' },
+        h('span', { class: 'pill' }, x.type === 'mcq' ? 'Multiple choice' : 'Typed answer'),
+        x.deleted_at ? h('span', { class: 'pill bad' }, 'Deleted')
+          : x.status === 'draft' ? h('span', { class: 'pill' }, 'Draft') : h('span', { class: 'pill ok' }, 'Published'),
+        x.source === 'ai' && h('span', { class: 'pill accent' }, 'AI'),
+        x.image_path && h('span', { class: 'pill accent' }, 'Picture')),
+      h('div', { class: 'text' }, x.text),
+      x.type === 'mcq'
+        ? h('div', { class: 'opts' }, (x.options || []).map((o, i) => h('div', { class: o === x.answer ? 'opt right-answer' : 'opt' }, h('b', {}, 'ABCDE'[i] || ''), o)))
+        : h('div', { class: 'opts' },
+            h('div', { class: 'opt right-answer' }, h('b', {}, icon('check')), x.answer),
+            (x.alt_answers || []).map((a) => h('div', { class: 'opt' }, h('b', {}, '='), a))),
+      x.explanation ? h('div', { class: 'explain' }, x.explanation) : h('div', { class: 'explain', style: 'color:var(--bad)' }, 'No explanation yet.')),
+    x.image_path && h('img', { src: imageUrl(x.image_path), alt: 'Question picture', loading: 'lazy' }));
 }
 
 function questionDialog(topic, question) {
@@ -471,8 +562,8 @@ function questionDialog(topic, question) {
 
   // Multiple choice: five boxes, one marked correct.
   const startOptions = q.type === 'mcq' && q.options.length === 5 ? q.options : ['', '', '', '', ''];
-  const optionInputs = startOptions.map((o) => h('input', { type: 'text', value: o, placeholder: 'Option' }));
-  const radios = startOptions.map((o, i) => h('input', { type: 'radio', name: 'correct', title: 'Correct answer', checked: q.type === 'mcq' ? o === q.answer && o !== '' : i === 0 }));
+  const optionInputs = startOptions.map((o, i) => h('input', { type: 'text', value: o, placeholder: `Option ${'ABCDE'[i]}` }));
+  const radios = startOptions.map((o) => h('input', { type: 'radio', name: 'correct', title: 'Correct answer', checked: q.type === 'mcq' && o === q.answer && o !== '' }));
   if (!radios.some((r) => r.checked)) radios[0].checked = true;
   const mcqBox = h('div', {}, h('label', {}, 'Options (select the correct one)'),
     optionInputs.map((input, i) => h('div', { class: 'option-row' }, radios[i], input)));
@@ -489,7 +580,7 @@ function questionDialog(topic, question) {
 
   // Picture.
   const preview = h('div', {});
-  const drawPreview = () => preview.replaceChildren(imagePath
+  const drawPreview = () => fill(preview, imagePath
     ? h('div', { class: 'row' }, h('img', { class: 'thumb', src: imageUrl(imagePath), alt: 'Question picture' }),
         h('button', { class: 'small danger', onclick: () => { imagePath = ''; drawPreview(); } }, 'Remove picture'))
     : h('span', { class: 'muted small' }, 'No picture.'));
@@ -506,12 +597,11 @@ function questionDialog(topic, question) {
 
   dialog((close) => [
     h('h2', {}, isNew ? `Add a question to ${topic.name}` : 'Edit question'),
-    field('Type', type),
+    h('div', { class: 'row' }, h('div', { class: 'grow' }, field('Type', type)), h('div', { class: 'grow' }, field('Status', status))),
     field('Question', text),
     mcqBox, saqBox,
     field('Explanation', explanation, 'Shown after answering, also offline. Say why the answer is right.'),
     h('div', { class: 'field' }, h('label', {}, 'Picture (for spotter questions)'), preview, h('div', { style: 'margin-top:8px' }, file)),
-    field('Status', status),
     h('div', { class: 'row' },
       !isNew && (q.deleted_at
         ? h('button', { onclick: async () => { await attempt(async () => ok(await db.from('questions').update({ deleted_at: null }).eq('id', q.id)), 'Question restored'); close(); render(); } }, 'Restore')
@@ -573,7 +663,7 @@ function importDialog() {
                 id: x.id, topic_id: t.id, type: isMcq ? 'mcq' : 'saq', text: String(x.text).trim(),
                 options: isMcq ? x.options : [], answer: String(x.answer).trim(), alt_answers: x.alt_answers || [],
                 explanation: x.explanation || '', source: 'seed',
-                image_path: x.image ? `seed/${String(x.image).split('/').pop()}` : '',
+                image_path: x.image ? (/^https?:/.test(x.image) ? x.image : `seed/${String(x.image).split('/').pop()}`) : '',
               });
             }
             if (rows.length) ok(await db.from('questions').upsert(rows));
@@ -611,16 +701,16 @@ async function exportUnit(unit) {
   }, 'Exported');
 }
 
-// -------------------------------------------------------------------- users
+// ----------------------------------------------------------------- accounts
 
 async function pageUsers(main) {
   const body = h('tbody', {});
-  const search = h('input', { type: 'search', placeholder: 'Search by email or name' });
+  const search = h('input', { type: 'search', placeholder: 'Search by email or name', style: 'max-width:420px' });
   let timer = null;
 
   const load = async () => {
     const users = ok(await db.rpc('admin_list_users', { search: search.value.trim(), max_rows: 200, skip: 0 }));
-    body.replaceChildren(...users.map((u) => {
+    fill(body, ...users.map((u) => {
       const mine = u.id === state.user.id;
       const role = h('select', { style: 'width:auto', onchange: async (e) => {
         const done = await attempt(async () => ok(await db.rpc('admin_set_role', { target: u.id, new_role: e.target.value })), 'Role changed');
@@ -647,15 +737,14 @@ async function pageUsers(main) {
         h('td', { class: 'small' }, when(u.created_at)),
         h('td', { class: 'small' }, when(u.last_sign_in_at)),
         h('td', {}, u.answers), h('td', {}, u.ai_calls),
-        h('td', {}, !mine && h('button', { class: 'small danger', onclick: () => confirmDialog(`Delete ${u.email}?`, 'The account and everything that belongs to it (answers, sessions, backup, AI questions) is removed for good.', 'Delete account', async () => { await attempt(async () => ok(await db.rpc('admin_delete_user', { target: u.id })), 'Account deleted'); load(); }) }, 'Delete')));
+        h('td', {}, !mine && h('button', { class: 'icon-btn danger', title: 'Delete account', onclick: () => confirmDialog(`Delete ${u.email}?`, 'The account and everything that belongs to it (answers, sessions, backup, AI questions) is removed for good.', 'Delete account', async () => { await attempt(async () => ok(await db.rpc('admin_delete_user', { target: u.id })), 'Account deleted'); load(); }) }, icon('trash'))));
     }), users.length === 0 ? h('tr', {}, h('td', { colspan: 8, class: 'muted' }, 'No accounts match.')) : '');
   };
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => attempt(load), 300); });
 
-  main.replaceChildren(
-    h('h1', {}, 'Accounts'),
-    h('p', { class: 'muted' }, 'Everyone who has signed up. Admins manage the question bank; owners can do everything on this site.'),
-    h('div', { style: 'margin:12px 0' }, search),
+  fill(main, 
+    pageHead('Accounts', 'Everyone who has signed up. Admins manage the question bank; owners can do everything on this site.'),
+    h('div', { style: 'margin-bottom:12px' }, search),
     h('div', { class: 'card table-wrap', style: 'padding:6px' },
       h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Account'), h('th', {}, 'Role'), h('th', {}, 'Plan'), h('th', {}, 'Joined'), h('th', {}, 'Last sign-in'), h('th', {}, 'Answers'), h('th', {}, 'AI calls'), h('th', {}))), body)));
   await load();
@@ -663,52 +752,186 @@ async function pageUsers(main) {
 
 // ----------------------------------------------------------------- settings
 
-const SECRETS = [
-  { name: 'gemini_api_key', label: 'Gemini API key', hint: 'Used by the server for every AI feature. Users never see it.' },
+// Ready-made starting points for the "Add provider" form. "openai" is the
+// request format most services speak, not only OpenAI itself.
+const PROVIDER_PRESETS = [
+  { label: 'Google Gemini', type: 'gemini', endpoint: '', modelHint: 'e.g. gemini-flash-latest', keyHint: 'AIza...' },
+  { label: 'Groq', type: 'openai', endpoint: 'https://api.groq.com/openai/v1', modelHint: 'e.g. openai/gpt-oss-120b', keyHint: 'gsk_...' },
+  { label: 'OpenAI (ChatGPT)', type: 'openai', endpoint: 'https://api.openai.com/v1', modelHint: 'e.g. gpt-4o-mini', keyHint: 'sk-...' },
+  { label: 'OpenRouter', type: 'openai', endpoint: 'https://openrouter.ai/api/v1', modelHint: 'e.g. deepseek/deepseek-chat', keyHint: 'sk-or-v1-...' },
+  { label: 'Anthropic (Claude)', type: 'anthropic', endpoint: '', modelHint: 'e.g. claude-haiku-4-5', keyHint: 'sk-ant-...' },
+  { label: 'Other (OpenAI-compatible)', type: 'openai', endpoint: '', modelHint: 'The model name your service expects', keyHint: 'Your API key' },
 ];
+const TYPE_DEFAULT_ENDPOINT = {
+  openai: 'https://api.openai.com/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  anthropic: 'https://api.anthropic.com/v1',
+};
 
-async function pageSettings(main) {
-  const config = ok(await db.from('app_config').select('*').order('key'));
-  const secrets = ok(await db.rpc('admin_secret_status'));
+/** Sends one tiny request straight from this browser to check a key works.
+ *  Only possible while the key is typed in the form (saved keys cannot be
+ *  read back). Returns a short description of the reply. */
+async function testProvider({ type, key, endpoint, model }) {
+  const base = (endpoint || TYPE_DEFAULT_ENDPOINT[type]).replace(/\/+$/, '');
+  const prompt = 'Reply with the single word OK.';
+  let url, headers, body, read;
+  if (type === 'gemini') {
+    url = `${base}/models/${encodeURIComponent(model)}:generateContent`;
+    headers = { 'Content-Type': 'application/json', 'x-goog-api-key': key };
+    body = { contents: [{ parts: [{ text: prompt }] }] };
+    read = (d) => d.candidates[0].content.parts.map((p) => p.text || '').join('');
+  } else if (type === 'anthropic') {
+    url = `${base}/messages`;
+    headers = { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+    body = { model, max_tokens: 16, messages: [{ role: 'user', content: prompt }] };
+    read = (d) => d.content.map((p) => p.text || '').join('');
+  } else {
+    url = `${base}/chat/completions`;
+    headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` };
+    body = { model, messages: [{ role: 'user', content: prompt }], max_tokens: 16 };
+    read = (d) => d.choices[0].message.content;
+  }
+  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const text = await response.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch (_) { /* not JSON */ }
+  if (!response.ok) {
+    const detail = data && data.error ? (data.error.message || JSON.stringify(data.error)) : text.slice(0, 200);
+    throw new Error(`The provider answered ${response.status}: ${detail}`);
+  }
+  return String(read(data) || '').trim().slice(0, 60) || '(empty reply)';
+}
 
-  const configRows = config.map((row) => {
-    const kind = typeof row.value;
-    const input = kind === 'boolean'
-      ? h('input', { type: 'checkbox', checked: row.value })
-      : h('input', { type: kind === 'number' ? 'number' : 'text', value: row.value, style: 'max-width:260px' });
-    const save = async () => {
-      const value = kind === 'boolean' ? input.checked : kind === 'number' ? Number(input.value) : input.value.trim();
-      await attempt(async () => ok(await db.from('app_config').update({ value }).eq('key', row.key).select()), 'Saved');
-    };
-    input.addEventListener('change', save);
-    return h('tr', {}, h('td', {}, h('b', {}, row.note || row.key), h('div', { class: 'muted small' }, row.key)), h('td', {}, input));
-  });
+function providerDialog(provider) {
+  const isNew = !provider;
+  const preset = h('select', {}, PROVIDER_PRESETS.map((p, i) => h('option', { value: i }, p.label)));
+  const name = h('input', { type: 'text', value: provider ? provider.name : '', placeholder: 'e.g. Groq key 1' });
+  const type = h('select', {},
+    h('option', { value: 'openai' }, 'openai (OpenAI, Groq, OpenRouter and compatible)'),
+    h('option', { value: 'gemini' }, 'gemini (Google)'),
+    h('option', { value: 'anthropic' }, 'anthropic (Claude)'));
+  type.value = provider ? provider.type : 'gemini';
+  const key = h('input', { type: 'password', autocomplete: 'off', placeholder: isNew ? 'Paste the API key' : `Saved (ends in ${provider.key_ending}). Paste a new key to replace it.` });
+  const endpoint = h('input', { type: 'url', value: provider ? provider.endpoint : '', placeholder: 'Leave empty for the usual address' });
+  const model = h('input', { type: 'text', value: provider ? provider.model : '', placeholder: 'e.g. gemini-flash-latest' });
+  const weight = h('input', { type: 'number', min: 1, max: 100, value: provider ? provider.weight : 1 });
+  const enabled = h('input', { type: 'checkbox', checked: provider ? provider.enabled : true });
+  const testResult = h('span', { class: 'small muted' });
 
-  const secretRows = SECRETS.map((secret) => {
-    const current = secrets.find((s) => s.name === secret.name);
-    const input = h('input', { type: 'password', placeholder: current ? 'Paste a new key to replace it' : 'Paste the key', autocomplete: 'off' });
-    return h('div', { class: 'field' },
-      h('label', {}, secret.label),
-      h('p', { class: 'muted small' }, secret.hint, ' ',
-        current ? h('span', { class: 'pill ok' }, `Set on ${when(current.updated_at)}, ends in ${current.ending}`) : h('span', { class: 'pill bad' }, 'Not set')),
-      h('div', { class: 'row' }, h('div', { class: 'grow' }, input),
-        h('button', { class: 'primary', onclick: async () => {
-          if (!input.value.trim()) { toast('Paste the key first', true); return; }
-          const done = await attempt(async () => ok(await db.rpc('admin_set_secret', { secret_name: secret.name, secret_value: input.value })), 'Key saved');
+  const applyPreset = () => {
+    const p = PROVIDER_PRESETS[Number(preset.value)];
+    type.value = p.type;
+    endpoint.value = p.endpoint;
+    model.placeholder = p.modelHint;
+    key.placeholder = p.keyHint;
+    if (!name.value.trim()) name.value = p.label;
+  };
+  preset.addEventListener('change', applyPreset);
+  if (isNew) { name.value = ''; applyPreset(); name.value = ''; }
+
+  dialog((close) => [
+    h('h2', {}, isNew ? 'Add AI provider' : 'Edit AI provider'),
+    isNew && field('Start from', preset, 'Fills in the type and address for a known service.'),
+    field('Provider name', name, 'Only for you, to tell them apart (e.g. "Groq key 2").'),
+    field('Type', type, 'The request format the service speaks.'),
+    field('API key', key, 'Stored in the database where only the server can read it. It is never shown again.'),
+    field('Endpoint URL (optional)', endpoint, 'Base address only: do not include /chat/completions at the end.'),
+    field('Model', model, 'The exact model name to request from this provider.'),
+    h('div', { class: 'row' },
+      h('div', { style: 'width:140px' }, field('Weight', weight)),
+      h('p', { class: 'muted small grow' }, 'Providers take turns. A weight of 2 gets twice as many calls as a weight of 1.')),
+    h('label', { class: 'check' }, enabled, 'Switched on'),
+    h('div', { class: 'row' },
+      h('button', { onclick: async () => {
+        if (!key.value.trim()) { toast(isNew ? 'Paste the key first' : 'Paste the key again to test it (a saved key cannot be read back)', true); return; }
+        if (!model.value.trim()) { toast('Enter the model name first', true); return; }
+        testResult.textContent = 'Testing...';
+        testResult.style.color = '';
+        try {
+          const reply = await testProvider({ type: type.value, key: key.value.trim(), endpoint: endpoint.value.trim(), model: model.value.trim() });
+          testResult.textContent = `Works. It replied: "${reply}"`;
+          testResult.style.color = 'var(--ok)';
+        } catch (error) {
+          testResult.textContent = error.message === 'Failed to fetch'
+            ? 'Could not reach the provider from this browser (wrong address, or it blocks browser requests).'
+            : error.message;
+          testResult.style.color = 'var(--bad)';
+        }
+      } }, icon('test'), 'Test'),
+      h('div', { class: 'grow' }, testResult)),
+    h('div', { class: 'row' },
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        if (!name.value.trim()) { toast('Give the provider a name', true); return; }
+        if (isNew && !key.value.trim()) { toast('Paste the API key', true); return; }
+        if (!model.value.trim()) { toast('Enter the model name', true); return; }
+        const saved = await attempt(async () => ok(await db.rpc('admin_save_ai_provider', {
+          provider_id: provider ? provider.id : null,
+          new_name: name.value, new_type: type.value, new_key: key.value,
+          new_endpoint: endpoint.value, new_model: model.value,
+          new_weight: Math.min(100, Math.max(1, Number(weight.value) || 1)),
+          new_enabled: enabled.checked,
+        })), 'Saved');
+        if (saved !== undefined) { close(); render(); }
+      } }, 'Save')),
+  ]);
+}
+
+async function pageSettings(main, tab) {
+  const current = tab === 'limits' ? 'limits' : 'providers';
+  const tabs = h('div', { class: 'tabs' },
+    h('a', { class: current === 'providers' ? 'on' : '', href: '#/settings/providers' }, icon('spark'), 'AI providers'),
+    h('a', { class: current === 'limits' ? 'on' : '', href: '#/settings/limits' }, icon('gauge'), 'AI limits'));
+  const body = h('div', {});
+  fill(main, pageHead('Settings', 'Only owners see this page.'), tabs, body);
+  if (current === 'limits') await settingsLimits(body); else await settingsProviders(body);
+}
+
+async function settingsProviders(body) {
+  const providers = ok(await db.rpc('admin_list_ai_providers'));
+  const active = providers.filter((p) => p.enabled);
+  const totalWeight = active.reduce((n, p) => n + p.weight, 0) || 1;
+
+  fill(body, 
+    h('div', { class: 'row spread', style: 'margin-bottom:12px' },
+      h('div', {}, h('h2', { style: 'margin:0' }, 'AI providers'),
+        h('p', { class: 'muted small', style: 'margin:0' }, 'The server uses the switched-on providers in turn. If one fails, it moves to the next.')),
+      h('button', { class: 'primary', onclick: () => providerDialog(null) }, icon('plus'), 'Add provider')),
+    providers.length === 0 && h('div', { class: 'card center muted' }, 'No providers yet. Add one so the app\'s AI features can work.'),
+    h('div', { class: 'list' }, providers.map((p) => h('div', { class: p.enabled ? 'card' : 'card gone' },
+      h('div', { class: 'row' },
+        h('div', { class: 'grow' },
+          h('div', { class: 'row' }, h('h3', {}, p.name), h('span', { class: 'pill' }, p.type),
+            p.enabled && h('span', { class: 'pill accent' }, `${Math.round(100 * p.weight / totalWeight)}% of calls`)),
+          h('div', { class: 'muted small', style: 'margin-top:4px' },
+            `Weight: ${p.weight}  ·  Model: ${p.model || '(none)'}  ·  Endpoint: ${p.endpoint || 'usual address'}  ·  Key ends in ${p.key_ending}`),
+          h('div', { class: 'muted small' },
+            `${p.uses} call${Number(p.uses) === 1 ? '' : 's'} served`, p.last_used_at ? `, last on ${when(p.last_used_at)}` : ''),
+          p.last_error && h('div', { class: 'small', style: 'color:var(--bad);margin-top:4px' }, `Last problem (${when(p.last_error_at)}): ${p.last_error}`)),
+        toggle(p.enabled, async (e) => {
+          const done = await attempt(async () => ok(await db.rpc('admin_set_ai_provider_enabled', { provider_id: p.id, is_enabled: e.target.checked })), e.target.checked ? 'Switched on' : 'Switched off');
           if (done !== undefined) render();
-        } }, 'Save'),
-        current && h('button', { class: 'danger', onclick: () => confirmDialog(`Remove the ${secret.label}?`, 'AI features stop working until a new key is saved.', 'Remove', async () => { await attempt(async () => ok(await db.rpc('admin_set_secret', { secret_name: secret.name, secret_value: '' })), 'Key removed'); render(); }) }, 'Remove')));
-  });
+        }, 'Switch this provider on or off'),
+        h('button', { class: 'icon-btn', title: 'Edit', onclick: () => providerDialog(p) }, icon('edit')),
+        h('button', { class: 'icon-btn danger', title: 'Delete', onclick: () => confirmDialog(`Delete "${p.name}"?`, 'Its key is removed for good.', 'Delete', async () => { await attempt(async () => ok(await db.rpc('admin_delete_ai_provider', { provider_id: p.id })), 'Provider deleted'); render(); }) }, icon('trash')))))));
+}
 
-  main.replaceChildren(
-    h('h1', {}, 'Settings'),
-    h('p', { class: 'muted' }, 'Only owners see this page.'),
-    h('h2', { style: 'margin-top:18px' }, 'AI'),
-    h('div', { class: 'card table-wrap', style: 'padding:6px' }, h('table', {}, h('tbody', {}, configRows))),
-    h('h2', { style: 'margin-top:22px' }, 'Keys'),
-    h('div', { class: 'card' },
-      h('p', { class: 'muted small' }, 'A saved key can be replaced or removed but never read back, not even here. Only its last four characters are shown.'),
-      secretRows));
+async function settingsLimits(body) {
+  const config = ok(await db.from('app_config').select('*').order('key'));
+  const rows = config.map((row) => {
+    const kind = typeof row.value;
+    const save = async (value) => { await attempt(async () => ok(await db.from('app_config').update({ value }).eq('key', row.key).select()), 'Saved'); };
+    const input = kind === 'boolean'
+      ? toggle(row.value, (e) => save(e.target.checked))
+      : h('input', { type: kind === 'number' ? 'number' : 'text', value: row.value, style: 'width:140px',
+          onchange: (e) => save(kind === 'number' ? Number(e.target.value) : e.target.value.trim()) });
+    return h('div', { class: 'card row' },
+      h('div', { class: 'grow' }, h('b', {}, row.note || row.key), h('div', { class: 'muted small' }, row.key)), input);
+  });
+  fill(body, 
+    h('h2', { style: 'margin:0' }, 'AI limits'),
+    h('p', { class: 'muted small' }, 'How much AI each person may use, and a switch for all AI features.'),
+    h('div', { class: 'list' }, rows));
 }
 
 start();
