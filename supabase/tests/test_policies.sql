@@ -125,6 +125,16 @@ insert into public.user_attempts
   (auth.uid(), '20000000-0000-0000-0000-000000000001', 'q1',
    '10000000-0000-0000-0000-000000000001', 'alarm', true, now());
 insert into public.user_backups (user_id, alarms) values (auth.uid(), '[{"id":1}]');
+-- A question the AI wrote for this user, and an answer to it.
+insert into public.user_questions (id, user_id, topic_id, topic_name, type, text, answer)
+  values ('ai_1', auth.uid(), 't1', 'Topic one', 'saq', 'Mine?', 'Yes');
+insert into public.user_attempts
+  (user_id, client_id, question_id, mode, correct, answered_at) values
+  (auth.uid(), '20000000-0000-0000-0000-000000000009', 'ai_1', 'bank', true, now());
+select pg_temp.expect((select count(*) from public.user_questions) = 1,
+  'a user keeps the questions the AI wrote for them');
+delete from public.user_attempts
+  where client_id = '20000000-0000-0000-0000-000000000009';
 -- Uploading the same answer again is harmless.
 insert into public.user_attempts
   (user_id, client_id, question_id, mode, correct, answered_at) values
@@ -154,8 +164,9 @@ select pg_temp.act_as('00000000-0000-0000-0000-00000000000c');
 select pg_temp.expect(
   (select count(*) from public.user_attempts) = 0
   and (select count(*) from public.user_sessions) = 0
-  and (select count(*) from public.user_backups) = 0,
-  'a user cannot see another user''s answers, sessions or backup');
+  and (select count(*) from public.user_backups) = 0
+  and (select count(*) from public.user_questions) = 0,
+  'a user cannot see another user''s answers, sessions, backup or AI questions');
 
 select pg_temp.act_as('00000000-0000-0000-0000-00000000000a');
 select pg_temp.expect((select count(*) from public.user_attempts) = 0,
@@ -175,6 +186,7 @@ select pg_temp.expect(
   and (select count(*) from public.user_sessions) = 0
   and (select count(*) from public.user_backups) = 0
   and (select count(*) from public.ai_usage) = 0
+  and (select count(*) from public.user_questions) = 0
   and (select count(*) from public.profiles
        where id = '00000000-0000-0000-0000-00000000000b') = 0,
   'deleting an account deletes its data');

@@ -4,7 +4,8 @@
 --   Question bank   anyone (even without an account) can READ published
 --                   questions; only admins can add, change or remove.
 --   Profiles        you read and edit your own; admins read all.
---   User data       you see and change only your own rows.
+--   User data       you see and change only your own rows (answers,
+--                   sessions, backup, and the questions the AI wrote for you).
 --   AI usage        you can read your own; only the server writes.
 --
 -- "The server" means the BrainWake API using the service key, which
@@ -16,6 +17,7 @@ alter table public.topics        enable row level security;
 alter table public.questions     enable row level security;
 alter table public.user_sessions enable row level security;
 alter table public.user_attempts enable row level security;
+alter table public.user_questions enable row level security;
 alter table public.user_backups  enable row level security;
 alter table public.ai_usage      enable row level security;
 
@@ -61,6 +63,10 @@ create policy "own attempts" on public.user_attempts
   for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+create policy "own AI questions" on public.user_questions
+  for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
 create policy "own backup" on public.user_backups
   for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -75,7 +81,8 @@ grant usage on schema public to anon, authenticated;
 grant select on public.units, public.topics, public.questions to anon;
 grant select, insert, update, delete on
   public.units, public.topics, public.questions,
-  public.user_sessions, public.user_attempts, public.user_backups
+  public.user_sessions, public.user_attempts, public.user_backups,
+  public.user_questions
   to authenticated;
 grant select, update on public.profiles to authenticated;
 grant select on public.ai_usage to authenticated;

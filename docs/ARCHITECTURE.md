@@ -37,6 +37,7 @@
 | `questions` | Text, 5 options or none, answer, accepted alternatives, explanation, picture, `draft`/`published` | Everyone (published only); admins (all) | Admins |
 | `user_sessions` | Each alarm ring or practice session | Its owner | Its owner |
 | `user_attempts` | Every answer given | Its owner | Its owner |
+| `user_questions` | Questions the AI wrote for that user | Its owner | Its owner |
 | `user_backups` | A user's alarms and settings, for restoring on a new phone | Its owner | Its owner |
 | `ai_usage` | One row per AI call, for daily limits | Its owner | The server only |
 
@@ -49,8 +50,10 @@ Design choices:
   changed since my last download?" and so also learns about removals.
 - **Uploads from the phone are repeat-safe.** Sessions and answers carry an
   id made on the phone, so sending the same one twice stores it once.
-- **AI-written questions arrive as drafts** and stay hidden from the app
-  until an admin publishes them.
+- **AI-written questions go straight to the user who asked.** They are
+  private to that user and saved to their account, so they follow them to
+  a new phone. They are not added to the shared bank. (Drafts exist only
+  for questions an admin is still writing.)
 - **A multiple-choice question must have exactly 5 options and its answer
   must be one of them**; the database itself refuses anything else.
 - **Deleting an account deletes its data** (answers, sessions, backup, AI

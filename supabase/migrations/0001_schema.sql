@@ -106,10 +106,10 @@ create table public.questions (
   -- storage bucket, or empty.
   image_path  text not null default '',
   -- Where it came from: written by an admin, imported from the app's
-  -- bundled files, or written by the AI.
+  -- bundled files, or written by the AI at an admin's request.
   source      text not null default 'admin' check (source in ('admin', 'seed', 'ai')),
-  -- Drafts (e.g. AI-written questions waiting for review) are hidden from
-  -- the app until an admin publishes them.
+  -- Drafts are questions an admin is still working on; they are hidden
+  -- from the app until published.
   status      text not null default 'published' check (status in ('draft', 'published')),
   created_by  uuid references auth.users (id) on delete set null,
   deleted_at  timestamptz,
@@ -151,13 +151,38 @@ create table public.user_sessions (
 );
 create index user_sessions_user_idx on public.user_sessions (user_id, started_at desc);
 
+-- Questions the AI wrote for one user. They go straight to that user (no
+-- review) and belong only to them; saving them here lets them follow the
+-- user to a new phone. Same shape as a shared question.
+create table public.user_questions (
+  id          text not null,                -- made on the phone, e.g. 'ai_...'
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  -- The shared topic it was written for, if that topic still exists.
+  topic_id    text references public.topics (id) on delete set null,
+  -- The topic's name, kept so the question still has a home if the user
+  -- made the topic themselves (those exist only on their phone).
+  topic_name  text not null default '',
+  type        text not null check (type in ('mcq', 'saq')),
+  text        text not null check (length(trim(text)) > 0),
+  options     jsonb not null default '[]'::jsonb,
+  answer      text not null check (length(trim(answer)) > 0),
+  alt_answers jsonb not null default '[]'::jsonb,
+  explanation text not null default '',
+  created_at  timestamptz not null default now(),
+  primary key (user_id, id),
+  constraint user_questions_shape check (
+    jsonb_typeof(options) = 'array' and jsonb_typeof(alt_answers) = 'array'
+  )
+);
+
 -- Every answer a user gave. client_id is made on the phone for the same
--- reason as above.
+-- reason as above. question_id is a shared question's id or one of the
+-- user's own, so it is not tied to either table.
 create table public.user_attempts (
   id          bigint generated always as identity primary key,
   user_id     uuid not null references auth.users (id) on delete cascade,
   client_id   uuid not null,
-  question_id text not null references public.questions (id) on delete cascade,
+  question_id text not null,
   session_id  uuid references public.user_sessions (id) on delete set null,
   mode        text not null,
   correct     boolean not null,
