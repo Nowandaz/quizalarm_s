@@ -7,7 +7,7 @@ that makes AI calls.
 | Piece | Runs on | Status |
 |---|---|---|
 | Database, accounts, picture storage | Supabase project `zsplxgvizlndnofsokxw` | **Live**: tables, security rules, picture bucket, 70 seed questions and their 10 pictures |
-| API (AI calls through the saved providers in turn, per-user limits) | Azure VM | Not started |
+| API (AI calls through the saved providers in turn, per-user limits) | Azure VM | **Built and tested**, in `api/` (see `docs/API.md`); not deployed yet |
 | Admin website (questions, pictures, accounts, settings, keys) | Runs locally for now; Azure VM later | **Built**, in `admin/` |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit.
@@ -64,6 +64,7 @@ person may do.
 
 ```
 admin/                 the admin website
+api/                   the API server (FastAPI) and its tests
 supabase/migrations/   the database, in order:
   0001_schema.sql        tables
   0002_policies.sql      who may read / change what

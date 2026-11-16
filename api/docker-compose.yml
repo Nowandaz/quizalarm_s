@@ -1,0 +1,19 @@
+# Runs the API on the server. It publishes NO port to the internet: the
+# HTTPS front door already on the server (Caddy) reaches it by name over the
+# shared Docker network "web" (create once: docker network create web).
+services:
+  api:
+    build: .
+    container_name: brainwake-api
+    restart: unless-stopped
+    env_file: .env
+    networks: [web]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  web:
+    external: true
