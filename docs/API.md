@@ -53,17 +53,23 @@ uvicorn app.main:app --factory --env-file .env --port 8100
 
 ## Run it on the server
 
-Needs Docker (already on the Azure VM) and a `.env` next to
-`docker-compose.yml` with the three values from `.env.example`. The secret
-key is created in the Supabase dashboard (Project settings > API keys >
-Secret keys) and goes only into that file.
+The API shares the Azure server with JARVIS but runs in its own container
+with its own settings. JARVIS's Caddy (the HTTPS front door) forwards
+`https://<server name>/brainwake/...` to it. Neither project's deploy
+restarts the other: if the API is down, only `/brainwake/...` fails.
+
+1. Copy `api\.env.example` to `api\.env` and fill in the three values.
+   The secret key is created in the Supabase dashboard (Project settings >
+   API keys > Secret keys). `api\.env` is ignored by git and must stay so.
+2. From this repository on the laptop:
 
 ```
-docker network create web        # once
-cd api
-docker compose up -d --build
+.\deploy\push.ps1 -Server 68.210.230.92 -WithEnv    # first time
+.\deploy\push.ps1 -Server 68.210.230.92             # later updates
 ```
 
-The container publishes no port. The HTTPS front door already running on
-the server (Caddy) must join the `web` network and forward a path to
-`brainwake-api:8000`.
+3. Open `https://jarvis-norys.austriaeast.cloudapp.azure.com/brainwake/health`.
+   It should show `{"ok":true}`.
+
+The route in Caddy lives in the JARVIS repository (`deploy/Caddyfile`), so
+JARVIS must have been deployed once with that route.
