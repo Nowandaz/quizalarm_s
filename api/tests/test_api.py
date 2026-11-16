@@ -118,6 +118,15 @@ def test_health_needs_no_sign_in(client):
     assert client.get("/health").json() == {"ok": True}
 
 
+def test_confirmation_page_and_browser_access(client):
+    page = client.get("/confirmed")
+    assert page.status_code == 200 and "sign in" in page.text
+    preflight = client.options("/v1/ai/status", headers={
+        "Origin": "http://localhost:8090", "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization"})
+    assert preflight.headers["access-control-allow-origin"] == "*"
+
+
 def test_sign_in_is_required(client, world):
     assert client.post("/v1/ai/generate", json=GENERATE).status_code == 401
     assert client.post("/v1/ai/generate", json=GENERATE, headers=auth("stolen")).status_code == 401

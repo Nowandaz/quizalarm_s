@@ -13,6 +13,7 @@ the token is the one Supabase gives the app when the user signs in.
 | Call | Body | Reply |
 |---|---|---|
 | `GET /health` | - | `{"ok": true}` (no sign-in) |
+| `GET /confirmed` | - | a small page shown after the emailed confirmation link |
 | `GET /v1/ai/status` | - | `{"enabled", "plan", "limit", "used", "remaining"}` |
 | `POST /v1/ai/generate` | `{"subject", "count" (1-10), "avoid": [existing question texts]}` | `{"questions": [{"type", "text", "options", "answer", "alt_answers", "explanation"}], "remaining"}` |
 | `POST /v1/ai/feedback` | `{"question", "options", "correct_answer", "explanation", "user_answer", "known_verdict"}` | `{"correct", "feedback", "explanation", "remaining"}` |
@@ -46,7 +47,7 @@ provider working, or the database unreachable.
 ```
 cd api
 pip install -r requirements-dev.txt
-python -m pytest                 # 18 tests, no network needed
+python -m pytest                 # 19 tests, no network needed
 copy .env.example .env           # then fill in the three values
 uvicorn app.main:app --factory --env-file .env --port 8100
 ```

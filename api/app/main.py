@@ -1,6 +1,7 @@
 """The web server: checks the caller, enforces limits, runs the AI task.
 
     GET  /health            is the server up (no sign-in)
+    GET  /confirmed         page shown after the emailed confirmation link
     GET  /v1/ai/status      the caller's AI allowance for today
     POST /v1/ai/generate    write new questions on a subject
     POST /v1/ai/feedback    explain an answer to the student
@@ -18,7 +19,8 @@ from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
 
 from . import tasks
@@ -55,6 +57,18 @@ class GradeRequest(BaseModel):
     user_answer: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
 
 
+CONFIRMED_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><title>Email confirmed</title>
+<style>body{font-family:system-ui,sans-serif;background:#0b0b0d;color:#f4f4f5;
+display:grid;place-items:center;min-height:100vh;margin:0;text-align:center;padding:24px}
+h1{font-size:26px;margin:0 0 8px}p{color:#a1a1aa;margin:0;max-width:320px;line-height:1.5}</style>
+</head><body><div><h1>Thanks</h1>
+<p>If your link was still valid, your email is confirmed. Go back to the app and sign in.</p>
+</div></body></html>"""
+
+
 def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None = None) -> FastAPI:
     """Builds the server. Tests pass their own settings and a fake network."""
 
@@ -68,6 +82,13 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
             await app.state.http.aclose()
 
     app = FastAPI(title="BrainWake API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+    # Browsers (the web emulator) may call the API from another address. Safe:
+    # callers prove who they are with a token in a header, never a cookie.
+    app.add_middleware(
+        CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"], max_age=86400,
+    )
 
     @app.exception_handler(StoreError)
     async def store_down(_: Request, error: StoreError):
@@ -135,6 +156,10 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
     @app.get("/health")
     async def health():
         return {"ok": True}
+
+    @app.get("/confirmed", response_class=HTMLResponse)
+    async def confirmed():
+        return CONFIRMED_PAGE
 
     @app.get("/v1/ai/status")
     async def ai_status(request: Request, user: Caller):
