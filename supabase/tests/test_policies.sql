@@ -116,6 +116,48 @@ exception when check_violation then
   raise notice 'ok: an MCQ answer must be one of its options';
 end $$;
 
+-- ---------------------------------------------------------- paid features
+reset role;
+insert into public.units (id, name, premium) values ('u2', 'Premium unit', true);
+insert into public.topics (id, unit_id, name) values ('t2', 'u2', 'Premium topic');
+insert into public.questions (id, topic_id, type, text, answer) values
+  ('p1', 't2', 'saq', 'Paid?', 'Yes');
+
+select pg_temp.act_as(null);
+select pg_temp.expect(
+  (select count(*) from public.questions where id = 'p1') = 0
+  and (select count(*) from public.units where id = 'u2') = 1,
+  'a visitor sees that a premium unit exists but not its questions');
+
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000b');
+select pg_temp.expect((select count(*) from public.questions where id = 'p1') = 0,
+  'a free user does not get premium questions');
+do $$
+begin
+  update public.profiles set plan = 'premium' where id = auth.uid();
+  raise exception 'FAILED: a user gave themselves premium';
+exception when others then
+  if sqlerrm like 'FAILED%' then raise; end if;
+  raise notice 'ok: a user cannot give themselves premium';
+end $$;
+
+-- The server confirms a payment.
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+update public.profiles set plan = 'premium', plan_expires_at = now() + interval '30 days'
+  where id = '00000000-0000-0000-0000-00000000000b';
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000b');
+select pg_temp.expect((select count(*) from public.questions where id = 'p1') = 1,
+  'a premium user gets premium questions');
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+update public.profiles set plan_expires_at = now() - interval '1 day'
+  where id = '00000000-0000-0000-0000-00000000000b';
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000b');
+select pg_temp.expect((select count(*) from public.questions where id = 'p1') = 0,
+  'premium stops when the plan runs out');
+
 -- ---------------------------------------------------------------- user data
 select pg_temp.act_as('00000000-0000-0000-0000-00000000000b');
 insert into public.user_sessions (id, user_id, kind, started_at) values

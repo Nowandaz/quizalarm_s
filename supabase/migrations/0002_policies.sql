@@ -2,7 +2,9 @@
 --
 -- Summary
 --   Question bank   anyone (even without an account) can READ published
---                   questions; only admins can add, change or remove.
+--                   questions of free units; questions of premium units
+--                   need a signed-in user with a premium plan.
+--                   Only admins can add, change or remove.
 --   Profiles        you read and edit your own; admins read all.
 --   User data       you see and change only your own rows (answers,
 --                   sessions, backup, and the questions the AI wrote for you).
@@ -47,9 +49,23 @@ create policy "admins manage topics" on public.topics
   for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
-create policy "anyone reads published questions" on public.questions
+create policy "read published questions; premium units need a plan"
+  on public.questions
   for select to anon, authenticated
-  using (status = 'published' or public.is_admin());
+  using (
+    public.is_admin()
+    or (
+      status = 'published'
+      and (
+        public.has_premium()
+        or not exists (
+          select 1 from public.topics t
+          join public.units u on u.id = t.unit_id
+          where t.id = questions.topic_id and u.premium
+        )
+      )
+    )
+  );
 create policy "admins manage questions" on public.questions
   for all to authenticated
   using (public.is_admin()) with check (public.is_admin());

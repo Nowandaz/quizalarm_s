@@ -14,6 +14,11 @@ create table public.profiles (
   display_name text not null default '',
   -- 'user' or 'admin'. Only an admin (or the server) can change it.
   role         text not null default 'user' check (role in ('user', 'admin')),
+  -- Paid features: 'free' or 'premium', and when premium runs out (null =
+  -- no end date). Set by the server when a payment is confirmed; a user
+  -- cannot change their own.
+  plan            text not null default 'free' check (plan in ('free', 'premium')),
+  plan_expires_at timestamptz,
   created_at   timestamptz not null default now()
 );
 
@@ -41,15 +46,29 @@ language sql stable security definer set search_path = public as $$
   );
 $$;
 
--- Nobody can make themselves an admin: role changes need an admin, or the
--- server (which has no signed-in user).
+-- True when the person making the request has a premium plan that has not
+-- run out.
+create function public.has_premium() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid()
+      and plan = 'premium'
+      and (plan_expires_at is null or plan_expires_at > now())
+  );
+$$;
+
+-- Nobody can make themselves an admin or give themselves premium: those
+-- changes need an admin, or the server (which has no signed-in user).
 create function public.protect_profile_role() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  if new.role is distinct from old.role
+  if (new.role is distinct from old.role
+      or new.plan is distinct from old.plan
+      or new.plan_expires_at is distinct from old.plan_expires_at)
      and auth.uid() is not null
      and not public.is_admin() then
-    raise exception 'Only an admin can change a role';
+    raise exception 'Only an admin can change a role or plan';
   end if;
   return new;
 end;
@@ -76,6 +95,9 @@ create table public.units (
   name        text not null,
   description text not null default '',
   sort_order  integer not null default 0,
+  -- A premium unit's questions are only given to signed-in users with a
+  -- premium plan. Its name still shows to everyone, so the app can offer it.
+  premium     boolean not null default false,
   -- Rows are never removed, only marked, so phones learn about deletions.
   deleted_at  timestamptz,
   updated_at  timestamptz not null default now()

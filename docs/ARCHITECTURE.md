@@ -32,9 +32,9 @@
 
 | Table | What it holds | Who can read | Who can write |
 |---|---|---|---|
-| `profiles` | One row per account; `role` is `user` or `admin` | Yourself; admins | Yourself (not your role); admins |
+| `profiles` | One row per account; `role` (`user`/`admin`) and `plan` (`free`/`premium`) | Yourself; admins | Yourself (not your role or plan); admins |
 | `units`, `topics` | The structure of the question bank | Everyone | Admins |
-| `questions` | Text, 5 options or none, answer, accepted alternatives, explanation, picture, `draft`/`published` | Everyone (published only); admins (all) | Admins |
+| `questions` | Text, 5 options or none, answer, accepted alternatives, explanation, picture, `draft`/`published` | Everyone for free units (published only); premium users for premium units; admins (all) | Admins |
 | `user_sessions` | Each alarm ring or practice session | Its owner | Its owner |
 | `user_attempts` | Every answer given | Its owner | Its owner |
 | `user_questions` | Questions the AI wrote for that user | Its owner | Its owner |
@@ -60,6 +60,26 @@ Design choices:
   usage).
 - **Admins manage content, not people's data**: the rules do not let an
   admin read other users' answers.
+
+## Paid features (groundwork only)
+
+Nothing is charged yet, but the database is ready for it:
+
+- every profile has a `plan` (`free` or `premium`) and an optional end
+  date; only the server or an admin can change them;
+- a unit can be marked `premium`. Its name is visible to everyone (so the
+  app can offer it), but its questions are only handed to signed-in users
+  whose premium plan is still running.
+
+What is still missing for real payments: a payment provider, and a server
+endpoint that sets `plan` when a payment is confirmed. Other paid features
+(for example a higher daily AI limit) can key off the same `plan` field.
+
+## Naming
+
+"BrainWake" is a working name. Nothing in the database carries it: tables,
+the storage bucket and policies have neutral names, so renaming the product
+needs no database change.
 
 ## Question pictures
 
