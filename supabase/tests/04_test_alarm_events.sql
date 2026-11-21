@@ -69,5 +69,21 @@ select public.admin_resolve_alarm_report((select id from public.admin_alarm_repo
 select pg_temp.expect((select count(*) = 0 from public.admin_alarm_reports(true)), 'a resolved report leaves the open list');
 select pg_temp.expect((select count(*) = 1 from public.admin_alarm_reports(false)), 'and stays in the full list');
 
+-- A user deletes their own account; everything of theirs goes with it.
+select pg_temp.act_as(null);
+select pg_temp.refused('select public.delete_my_account()', 'a visitor has no account to delete');
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000a');
+select pg_temp.refused('select public.delete_my_account()', 'the only owner cannot delete themselves');
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000c');
+select public.delete_my_account();
+reset role;
+select pg_temp.expect(
+  (select count(*) = 0 from auth.users where id = '00000000-0000-0000-0000-00000000000c')
+  and (select count(*) = 0 from public.profiles where id = '00000000-0000-0000-0000-00000000000c')
+  and (select count(*) = 0 from public.alarm_events where user_id = '00000000-0000-0000-0000-00000000000c'),
+  'deleting your own account removes it and what was stored for it');
+select pg_temp.expect((select count(*) = 1 from auth.users where id = '00000000-0000-0000-0000-00000000000a'),
+  'and nobody else');
+
 reset role;
 select 'ALARM EVENT TESTS PASSED';
