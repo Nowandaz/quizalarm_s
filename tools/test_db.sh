@@ -24,6 +24,8 @@ run supabase/migrations/0006_alarm_events.sql
 run supabase/migrations/0007_review_fixes.sql
 run supabase/migrations/0008_delete_my_account.sql
 run supabase/migrations/0009_payments.sql
+run supabase/migrations/0010_tiers_and_codes.sql
+run supabase/migrations/0011_accounts_tier.sql
 $PSQL -q -d "$DB" -c "grant all on all tables in schema public to service_role;
                       grant usage, select on all sequences in schema public to service_role, authenticated;"
 if [ -f supabase/seed.sql ]; then

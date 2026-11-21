@@ -24,14 +24,20 @@
       { id: 'pathology-spotters', unit_id: 'pathology', name: 'Spotters', sort_order: 0, deleted_at: null },
     ],
     questions: [],
+    tiers: [
+      { id: 'pro', name: 'Pro', description: 'Everything in the question bank and far more AI.', features: ['Every unit in the question bank, including the premium ones', 'A much higher daily AI allowance', 'Supports new questions being added'], price_month: 300, price_year: 2500, ai_daily_limit: 200, premium_units: true, sort_order: 1, active: true },
+      { id: 'max', name: 'Max', description: 'For heavy use before exams.', features: ['Everything in Pro', '500 AI requests a day', 'First to get new units'], price_month: 800, price_year: null, ai_daily_limit: 500, premium_units: true, sort_order: 2, active: true },
+    ],
+    promo_codes: [
+      { code: 'HALF', percent_off: 50, tier: null, max_uses: 20, used: 1, expires_at: null, active: true, note: 'Launch week', created_at: days(3) },
+      { code: 'GIFT', percent_off: 100, tier: 'max', max_uses: 5, used: 1, expires_at: days(-30), active: true, note: 'Class reps', created_at: days(2) },
+    ],
     app_config: [
       { key: 'ai_daily_limit_free', value: 10, note: 'AI calls a free user may make each day' },
       { key: 'ai_daily_limit_premium', value: 200, note: 'AI calls a premium user may make each day' },
       { key: 'ai_enabled', value: true, note: 'Turn all AI features on or off' },
       { key: 'payments_enabled', value: true, note: 'Let people buy premium in the app' },
       { key: 'premium_currency', value: 'KES', note: 'Currency of the prices (as set up on Paystack): KES, NGN, GHS, ZAR or USD' },
-      { key: 'premium_price_month', value: 300, note: 'Price of 30 days of premium' },
-      { key: 'premium_price_year', value: 2500, note: 'Price of 365 days of premium' },
     ],
   };
   const q = (topic, n, extra) => tables.questions.push({
@@ -49,7 +55,7 @@
   q('pathology-spotters', 2, { image_path: picture, text: 'What does this slide show?', options: ['Caseous necrosis', 'Fatty change', 'Amyloid', 'Granulation tissue', 'Fibrinoid necrosis'], answer: 'Caseous necrosis', explanation: 'Structureless pink material surrounded by granulomas, as in tuberculosis.' });
 
   const users = [
-    { id: 'u1', email: 'owner@example.com', display_name: 'Demo Owner', role: 'owner', plan: 'premium', plan_expires_at: null, created_at: days(40), last_sign_in_at: days(0), answers: 312, ai_calls: 41 },
+    { id: 'u1', tier: null, email: 'owner@example.com', display_name: 'Demo Owner', role: 'owner', plan: 'premium', plan_expires_at: null, created_at: days(40), last_sign_in_at: days(0), answers: 312, ai_calls: 41 },
     { id: 'u2', email: 'amina@example.com', display_name: 'Amina', role: 'admin', plan: 'free', plan_expires_at: null, created_at: days(21), last_sign_in_at: days(1), answers: 120, ai_calls: 9 },
     { id: 'u3', email: 'brian@example.com', display_name: '', role: 'user', plan: 'premium', plan_expires_at: days(-30), created_at: days(9), last_sign_in_at: days(3), answers: 58, ai_calls: 77 },
     { id: 'u4', email: 'chao@example.com', display_name: 'Chao', role: 'user', plan: 'free', plan_expires_at: null, created_at: days(2), last_sign_in_at: null, answers: 0, ai_calls: 0 },
@@ -70,6 +76,7 @@
     is(k, v) { this.tests.push((r) => (r[k] ?? null) === v); return this; }
     like(k, pattern) { const start = pattern.replace(/%$/, ''); this.tests.push((r) => String(r[k]).startsWith(start)); return this; }
     update(values) { this.action = (rows) => rows.forEach((r) => Object.assign(r, values)); return this; }
+    delete() { this.action = (rows) => rows.forEach((r) => this.rows.splice(this.rows.indexOf(r), 1)); return this; }
     insert(row) { this.rows.push({ deleted_at: null, created_at: new Date().toISOString(), ...row }); this.tests.push((r) => r.id === row.id); return this; }
     upsert(input) {
       for (const row of [].concat(input)) {
@@ -113,14 +120,20 @@
   ];
 
   const payRows = [
-    { id: 3, created_at: ago(200), paid_at: ago(198), email: 'brian@example.com', plan: 'year', days: 365, amount: 250000, currency: 'KES', status: 'paid', channel: 'mobile_money', note: '', reference: 'bw_4f1c9a0e7d' },
-    { id: 2, created_at: ago(1500), paid_at: null, email: 'chao@example.com', plan: 'month', days: 30, amount: 30000, currency: 'KES', status: 'pending', channel: '', note: '', reference: 'bw_a81b33c0f2' },
-    { id: 1, created_at: ago(4000), paid_at: ago(3998), email: 'amina@example.com', plan: 'month', days: 30, amount: 30000, currency: 'KES', status: 'paid', channel: 'card', note: '', reference: 'bw_0c77de19b5' },
+    { id: 5, created_at: ago(90), paid_at: ago(89), email: 'dan@example.com', tier: 'max', tier_name: 'Max', plan: 'month', days: 30, amount: 0, full_amount: 80000, code: 'GIFT', currency: 'KES', status: 'paid', channel: '', note: '', reference: 'bw_77aa01c3e9' },
+    { id: 4, created_at: ago(200), paid_at: ago(198), email: 'brian@example.com', tier: 'pro', tier_name: 'Pro', plan: 'year', days: 365, amount: 250000, full_amount: 250000, code: null, currency: 'KES', status: 'paid', channel: 'mobile_money', note: '', reference: 'bw_4f1c9a0e7d' },
+    { id: 3, created_at: ago(900), paid_at: ago(899), email: 'eve@example.com', tier: 'max', tier_name: 'Max', plan: 'month', days: 30, amount: 40000, full_amount: 80000, code: 'HALF', currency: 'KES', status: 'paid', channel: 'card', note: '', reference: 'bw_19c0b7d2a4' },
+    { id: 2, created_at: ago(1500), paid_at: null, email: 'chao@example.com', tier: 'pro', tier_name: 'Pro', plan: 'month', days: 30, amount: 30000, full_amount: 30000, code: null, currency: 'KES', status: 'pending', channel: '', note: '', reference: 'bw_a81b33c0f2' },
+    { id: 1, created_at: ago(4000), paid_at: ago(3998), email: 'amina@example.com', tier: 'pro', tier_name: 'Pro', plan: 'month', days: 30, amount: 30000, full_amount: 30000, code: null, currency: 'KES', status: 'paid', channel: 'mobile_money', note: '', reference: 'bw_0c77de19b5' },
   ];
 
   const rpcs = {
     admin_list_payments: () => payRows,
-    admin_payment_totals: () => ({ paid: 2, pending: 1, failed: 0, premium_users: 2, income: [{ currency: 'KES', amount: 280000, payments: 2 }] }),
+    admin_payment_totals: () => ({ paid: 4, pending: 1, failed: 0, buyers: 4, premium_users: 5, expiring_soon: 1,
+      income: [{ currency: 'KES', amount: 320000, payments: 3 }],
+      by_tier: [{ tier: 'Pro', period: 'year', currency: 'KES', payments: 1, amount: 250000 }, { tier: 'Max', period: 'month', currency: 'KES', payments: 2, amount: 40000 }, { tier: 'Pro', period: 'month', currency: 'KES', payments: 1, amount: 30000 }],
+      by_channel: [{ channel: 'mobile_money', payments: 2 }, { channel: 'card', payments: 1 }, { channel: 'code (free)', payments: 1 }],
+      members: [{ tier: 'Pro', accounts: 3 }, { tier: 'Max', accounts: 1 }, { tier: 'Premium (by hand)', accounts: 1 }] }),
     admin_alarm_health: () => ({ rang: 412, missed: 9, reports: 2, open_reports: alarmReports.filter((r) => !r.resolved && !r.detail.rang).length, false_alarms: 1, late_over_a_minute: 6, phones_reporting: 38,
       missed_by_device: [{ device: 'Tecno Camon 30 (Android 14)', missed: 5, users: 3 }, { device: 'Xiaomi Redmi Note 13 (Android 14)', missed: 3, users: 2 }, { device: 'Samsung SM-A155F (Android 15)', missed: 1, users: 1 }],
       problems: [{ problem: 'never_rang', reports: 1 }, { problem: 'no_sound', reports: 1 }] }),

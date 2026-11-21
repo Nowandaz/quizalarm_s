@@ -69,18 +69,72 @@ select pg_temp.expect(
    from public.profiles where id = '00000000-0000-0000-0000-0000000000b1'),
   'and its days are added on top of what was left');
 
+-- Tiers and codes (part 10).
+reset role;
+insert into public.tiers (id, name, price_month, price_year, ai_daily_limit, premium_units, sort_order)
+  values ('max', 'Max', 800, null, 500, true, 2), ('lite', 'Lite', 100, 900, 50, false, 0);
+insert into public.promo_codes (code, percent_off, tier, max_uses, expires_at) values
+  ('HALF', 50, null, 1, null), ('MAXONLY', 20, 'max', null, null),
+  ('OLD', 30, null, null, now() - interval '1 day'), ('GIFT', 100, null, null, null);
+
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000b1');
+select pg_temp.expect((select count(*) = 0 from public.promo_codes), 'a buyer cannot see discount codes');
+select pg_temp.refused($$select public.quote_payment('pro', 'month', 'HALF')$$, 'a buyer cannot ask the database for prices directly');
+update public.tiers set price_month = 1;
+update public.promo_codes set percent_off = 100;
+select pg_temp.expect((select price_month = 800 from public.tiers where id = 'max'), 'a buyer cannot change a price');
+select pg_temp.expect((select count(*) >= 3 from public.tiers), 'anyone can read the tiers');
+
+select pg_temp.act_as(null, 'service_role');
+select pg_temp.expect((select q ->> 'price' = '300.00' and q ->> 'days' = '30' and q ->> 'currency' = 'KES'
+  from public.quote_payment('pro', 'month') q), 'the first tier kept the old price');
+select pg_temp.expect((select (q ->> 'ok')::boolean = false from public.quote_payment('max', 'year') q),
+  'a period with no price is not on sale');
+select pg_temp.expect((select q ->> 'price' = '150.00' and q ->> 'percent_off' = '50' and q ->> 'code' = 'HALF'
+  from public.quote_payment('pro', 'month', ' half ') q), 'a code takes its percentage off');
+select pg_temp.expect((select q ->> 'price' = '300.00' and q ->> 'code_message' = 'That code is for a different plan.'
+  from public.quote_payment('pro', 'month', 'MAXONLY') q), 'a code for another tier is refused, at full price');
+select pg_temp.expect((select q ->> 'code_message' = 'That code has expired.' from public.quote_payment('pro', 'month', 'OLD') q),
+  'an expired code is refused');
+select pg_temp.expect((select q ->> 'code_message' = 'That code is not valid.' from public.quote_payment('pro', 'month', 'NOPE') q),
+  'an unknown code is refused');
+select pg_temp.expect((select q ->> 'price' = '0.00' from public.quote_payment('max', 'month', 'GIFT') q), 'a 100% code makes it free');
+
+-- Buying Max with the HALF code moves the account to Max and uses the code up.
+insert into public.payments (user_id, reference, plan, days, amount, full_amount, currency, tier, code)
+  values ('00000000-0000-0000-0000-0000000000b1', 'bw_test_max', 'month', 30, 40000, 80000, 'KES', 'max', 'HALF');
+select pg_temp.expect(public.apply_payment('bw_test_max', 40000, 'KES', 'mobile_money') = 'paid', 'a discounted payment is accepted');
+select pg_temp.expect((select tier = 'max' from public.profiles where id = '00000000-0000-0000-0000-0000000000b1'),
+  'the account is on the tier it bought');
+select pg_temp.expect((select q ->> 'code_message' = 'That code has been used up.' from public.quote_payment('pro', 'month', 'HALF') q),
+  'a code with one use cannot be used twice');
+-- A gift code: nothing to pay.
+insert into public.payments (user_id, reference, plan, days, amount, full_amount, currency, tier, code)
+  values ('00000000-0000-0000-0000-0000000000b1', 'bw_test_gift', 'month', 30, 0, 10000, 'KES', 'lite', 'GIFT');
+select pg_temp.expect(public.apply_payment('bw_test_gift', 0, 'KES', '') = 'paid', 'a free payment is accepted');
+
+-- A tier without premium units does not open them.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000b1');
+select pg_temp.expect(not public.has_premium(), 'the Lite tier does not open premium units');
+select pg_temp.act_as(null, 'service_role');
+update public.profiles set tier = 'max' where id = '00000000-0000-0000-0000-0000000000b1';
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000b1');
+select pg_temp.expect(public.has_premium(), 'the Max tier does');
+select pg_temp.refused($$update public.profiles set tier = 'lite' where id = auth.uid()$$, 'a buyer cannot move themselves to another tier');
+
 -- The owner sees the money.
 select pg_temp.act_as('00000000-0000-0000-0000-00000000000a');
-select pg_temp.expect((select count(*) = 3 and bool_or(email = 'buyer@example.com') from public.admin_list_payments()),
+select pg_temp.expect((select count(*) = 5 and bool_or(email = 'buyer@example.com') and bool_or(tier_name = 'Max' and code = 'HALF') from public.admin_list_payments()),
   'the owner sees payments with who paid');
 select pg_temp.expect(
-  (select t ->> 'paid' = '2' and t ->> 'failed' = '1' and t -> 'income' -> 0 ->> 'amount' = '280000'
+  (select t ->> 'paid' = '4' and t ->> 'failed' = '1' and t -> 'income' -> 0 ->> 'amount' = '320000'
+     and t ->> 'buyers' = '1' and jsonb_array_length(t -> 'by_tier') >= 2
    from public.admin_payment_totals() t), 'totals add up');
 
 -- A deleted account keeps its money record.
 reset role;
 delete from auth.users where id = '00000000-0000-0000-0000-0000000000b1';
-select pg_temp.expect((select count(*) = 3 and bool_and(user_id is null) from public.payments),
+select pg_temp.expect((select count(*) = 5 and bool_and(user_id is null) from public.payments),
   'payments survive the account, without the person');
 
 select 'PAYMENT TESTS PASSED';

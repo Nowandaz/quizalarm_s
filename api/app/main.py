@@ -127,6 +127,11 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
     async def allowance(store: Store, user: User) -> dict:
         config = await store.config()
         limit = config.get("ai_daily_limit_premium" if user.premium else "ai_daily_limit_free", 0)
+        if user.premium and user.tier:
+            # A paid tier sets its own allowance.
+            tier = next((t for t in await store.tiers() if t["id"] == user.tier), None)
+            if tier is not None:
+                limit = tier.get("ai_daily_limit", limit)
         limit = limit if isinstance(limit, int) and limit > 0 else 0
         used = await store.used_today(user.id)
         return {

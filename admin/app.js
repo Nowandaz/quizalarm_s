@@ -866,6 +866,7 @@ async function pageUsers(main) {
   const search = h('input', { type: 'search', placeholder: 'Search by email or name', style: 'max-width:420px' });
   let timer = null;
 
+  const tiers = ok(await db.from('tiers').select('id, name').order('sort_order'));
   const load = async () => {
     const users = ok(await db.rpc('admin_list_users', { search: search.value.trim(), max_rows: 200, skip: 0 }));
     fill(body, ...users.map((u) => {
@@ -875,12 +876,19 @@ async function pageUsers(main) {
         if (done === undefined) e.target.value = u.role; else u.role = e.target.value;
       } }, ['user', 'admin', 'owner'].map((r) => h('option', { value: r, selected: u.role === r }, r[0].toUpperCase() + r.slice(1))));
       const expiry = h('input', { type: 'date', style: 'width:auto', value: u.plan_expires_at ? u.plan_expires_at.slice(0, 10) : '', title: 'Premium ends on (empty = no end date)' });
-      const plan = h('select', { style: 'width:auto' }, ['free', 'premium'].map((p) => h('option', { value: p, selected: u.plan === p }, p[0].toUpperCase() + p.slice(1))));
+      // "free", "premium" (everything, given by hand) or "tier:<id>".
+      const now = u.plan !== 'premium' ? 'free' : u.tier ? `tier:${u.tier}` : 'premium';
+      const plan = h('select', { style: 'width:auto' },
+        h('option', { value: 'free', selected: now === 'free' }, 'Free'),
+        tiers.map((t) => h('option', { value: `tier:${t.id}`, selected: now === `tier:${t.id}` }, t.name)),
+        h('option', { value: 'premium', selected: now === 'premium' }, 'Premium (everything)'));
       const savePlan = async () => {
-        expiry.style.display = plan.value === 'premium' ? '' : 'none';
+        const paid = plan.value !== 'free';
+        expiry.style.display = paid ? '' : 'none';
         await attempt(async () => ok(await db.rpc('admin_set_plan', {
-          target: u.id, new_plan: plan.value,
-          expires: plan.value === 'premium' && expiry.value ? new Date(`${expiry.value}T23:59:59`).toISOString() : null,
+          target: u.id, new_plan: paid ? 'premium' : 'free',
+          expires: paid && expiry.value ? new Date(`${expiry.value}T23:59:59`).toISOString() : null,
+          new_tier: plan.value.startsWith('tier:') ? plan.value.slice(5) : null,
         })), 'Plan changed');
       };
       plan.addEventListener('change', savePlan);
@@ -917,42 +925,69 @@ function money(amount, currency) {
 
 async function pagePayments(main) {
   const totals = ok(await db.rpc('admin_payment_totals', { days: 30 }));
-  const payments = ok(await db.rpc('admin_list_payments', { max_rows: 300 }));
+  const payments = ok(await db.rpc('admin_list_payments', { max_rows: 500 }));
   const config = ok(await db.from('app_config').select('key, value').eq('key', 'payments_enabled'));
   const selling = config[0] && config[0].value === true;
   const card = (iconName, value, label) => h('div', { class: 'card stat' },
     h('div', { class: 'ic' }, icon(iconName)), h('div', {}, h('b', {}, value ?? 0), h('span', {}, label)));
   const STATUS = { paid: ['pill ok', 'Paid'], pending: ['pill', 'Not finished'], failed: ['pill bad', 'Failed'] };
+  const PERIOD = { month: '30 days', year: '365 days' };
+  const HOW = { mobile_money: 'M-Pesa', card: 'Card', bank: 'Bank', 'code (free)': 'Free with a code' };
+  const small = (title, rows) => rows.length > 0 && h('div', { class: 'card' }, h('h3', {}, title),
+    h('table', {}, h('tbody', {}, rows.map((cells) => h('tr', {}, cells.map((c, i) => h('td', { class: i ? 'small' : '' }, c)))))));
+
+  let filter = 'all';
+  let search = '';
+  const body = h('tbody', {});
+  const chips = h('div', { class: 'chips' });
+  const draw = () => {
+    const count = (key) => payments.filter((p) => key === 'all' || p.status === key).length;
+    fill(chips, [['all', 'All'], ['paid', 'Paid'], ['pending', 'Not finished'], ['failed', 'Failed']].map(([key, label]) =>
+      h('button', { class: filter === key ? 'chip on' : 'chip', onclick: () => { filter = key; draw(); } }, `${label} (${count(key)})`)));
+    const q = search.trim().toLowerCase();
+    const rows = payments.filter((p) => (filter === 'all' || p.status === filter)
+      && (!q || (p.email || '').toLowerCase().includes(q) || p.reference.includes(q) || (p.code || '').toLowerCase().includes(q)));
+    fill(body, rows.map((p) => h('tr', {},
+      h('td', { class: 'small' }, whenExactly(p.paid_at || p.created_at)),
+      h('td', {}, p.email || h('span', { class: 'muted' }, 'deleted account')),
+      h('td', {}, h('b', {}, p.tier_name), h('div', { class: 'muted small' }, PERIOD[p.plan] || `${p.days} days`)),
+      h('td', {}, money(p.amount, p.currency),
+        p.code && h('div', { class: 'muted small' }, `${p.code}${p.full_amount ? `, was ${money(p.full_amount, p.currency)}` : ''}`)),
+      h('td', {}, h('span', { class: (STATUS[p.status] || ['pill'])[0] }, (STATUS[p.status] || ['', p.status])[1]),
+        p.note && h('div', { class: 'small', style: 'color:var(--bad)' }, p.note)),
+      h('td', { class: 'small' }, p.status === 'paid' && Number(p.amount) === 0 ? 'Free with a code' : (HOW[p.channel] || p.channel || '-')),
+      h('td', { class: 'small muted' }, p.reference))),
+      rows.length === 0 && h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'No payments match.')));
+  };
 
   fill(main,
-    pageHead('Payments', 'Premium bought in the app through Paystack, last 30 days at the top.',
-      h('button', { onclick: () => { location.hash = '#/settings/premium'; } }, icon('edit'), 'Prices')),
+    pageHead('Payments', 'What people bought in the app, who and when. The figures are for the last 30 days.',
+      h('button', { onclick: () => { location.hash = '#/settings/premium'; } }, icon('edit'), 'Plans and codes')),
     !selling && h('div', { class: 'card row', style: 'border-color:var(--bad)' }, icon('card'),
-      h('div', { class: 'grow' }, h('b', {}, 'Selling premium is switched off'),
-        h('div', { class: 'muted small' }, 'People cannot buy premium in the app until you switch it on under Settings, Premium prices.'))),
+      h('div', { class: 'grow' }, h('b', {}, 'Selling is switched off'),
+        h('div', { class: 'muted small' }, 'People cannot buy a plan in the app until you switch it on under Settings, Plans and codes.'))),
     h('div', { class: 'grid' },
       totals.income.length === 0
-        ? card('card', '0', 'Income, last 30 days')
-        : totals.income.map((i) => card('card', money(i.amount, i.currency), `Income, last 30 days (${i.payments} payment${i.payments === 1 ? '' : 's'})`)),
-      card('check', totals.paid, 'Paid'),
+        ? card('card', '0', 'Income')
+        : totals.income.map((i) => card('card', money(i.amount, i.currency), `Income (${i.payments} payment${i.payments === 1 ? '' : 's'})`)),
+      card('users', totals.buyers, 'People who paid'),
       card('gauge', totals.pending, 'Started, not finished'),
       card('edit', totals.failed, 'Failed'),
-      card('users', totals.premium_users, 'Premium accounts now')),
+      card('spark', totals.premium_users, 'On a paid plan now'),
+      card('alarm', totals.expiring_soon, 'Running out within 7 days')),
+    h('div', { class: 'grid wide', style: 'margin-top:12px' },
+      small('Sales by plan', totals.by_tier.map((t) => [`${t.tier}, ${PERIOD[t.period] || t.period}`, `${t.payments} sold`, money(t.amount, t.currency)])),
+      small('How people paid', totals.by_channel.map((c) => [HOW[c.channel] || c.channel || 'Unknown', `${c.payments}`])),
+      small('Who is on what now', totals.members.map((m) => [m.tier, `${m.accounts} account${m.accounts === 1 ? '' : 's'}`]))),
     h('div', { class: 'section' }, h('h2', {}, 'All payments'),
-      payments.length === 0
-        ? h('div', { class: 'card center muted' }, 'No payments yet.')
-        : h('div', { class: 'card table-wrap', style: 'padding:6px' },
-            h('table', {},
-              h('thead', {}, h('tr', {}, h('th', {}, 'When'), h('th', {}, 'Account'), h('th', {}, 'Bought'), h('th', {}, 'Amount'), h('th', {}, 'Status'), h('th', {}, 'Paid with'), h('th', {}, 'Reference'))),
-              h('tbody', {}, payments.map((p) => h('tr', {},
-                h('td', { class: 'small' }, whenExactly(p.paid_at || p.created_at)),
-                h('td', {}, p.email || h('span', { class: 'muted' }, 'deleted account')),
-                h('td', {}, `${p.days} days`),
-                h('td', {}, money(p.amount, p.currency)),
-                h('td', {}, h('span', { class: (STATUS[p.status] || ['pill'])[0] }, (STATUS[p.status] || ['', p.status])[1]),
-                  p.note && h('div', { class: 'small', style: 'color:var(--bad)' }, p.note)),
-                h('td', { class: 'small' }, (p.channel || '').replace('_', ' ') || '-'),
-                h('td', { class: 'small muted' }, p.reference))))))));
+      h('div', { class: 'row', style: 'margin-bottom:12px' },
+        h('input', { type: 'search', class: 'grow', style: 'max-width:420px', placeholder: 'Search by email, code or reference', oninput: (e) => { search = e.target.value; draw(); } }),
+        chips),
+      h('div', { class: 'card table-wrap', style: 'padding:6px' },
+        h('table', {},
+          h('thead', {}, h('tr', {}, h('th', {}, 'When'), h('th', {}, 'Who'), h('th', {}, 'Bought'), h('th', {}, 'Paid'), h('th', {}, 'Status'), h('th', {}, 'How'), h('th', {}, 'Reference'))),
+          body))));
+  draw();
 }
 
 // ----------------------------------------------------------------- settings
@@ -1087,15 +1122,14 @@ async function pageSettings(main, tab) {
   const tabs = h('div', { class: 'tabs' },
     h('a', { class: current === 'providers' ? 'on' : '', href: '#/settings/providers' }, icon('spark'), 'AI providers'),
     h('a', { class: current === 'limits' ? 'on' : '', href: '#/settings/limits' }, icon('gauge'), 'AI limits'),
-    h('a', { class: current === 'premium' ? 'on' : '', href: '#/settings/premium' }, icon('card'), 'Premium prices'));
+    h('a', { class: current === 'premium' ? 'on' : '', href: '#/settings/premium' }, icon('card'), 'Plans and codes'));
   const body = h('div', {});
   fill(main, pageHead('Settings', 'Only owners see this page.'), tabs, body);
   if (current === 'limits') {
     await settingsRows(body, (key) => key.startsWith('ai_'), 'AI limits',
       'How much AI each person may use, and a switch for all AI features.');
   } else if (current === 'premium') {
-    await settingsRows(body, (key) => key.startsWith('premium_') || key.startsWith('payments_'), 'Premium prices',
-      'What premium costs in the app. People pay on Paystack\'s page; the Paystack key itself lives on the server, not here. Prices are in whole units of the currency (300 = KES 300).');
+    await settingsPlans(body);
   } else {
     await settingsProviders(body);
   }
@@ -1128,6 +1162,145 @@ async function settingsProviders(body) {
         }, 'Switch this provider on or off'),
         h('button', { class: 'icon-btn', title: 'Edit', onclick: () => providerDialog(p) }, icon('edit')),
         h('button', { class: 'icon-btn danger', title: 'Delete', onclick: () => confirmDialog(`Delete "${p.name}"?`, 'Its key is removed for good.', 'Delete', async () => { await attempt(async () => ok(await db.rpc('admin_delete_ai_provider', { provider_id: p.id })), 'Provider deleted'); render(); }) }, icon('trash')))))));
+}
+
+// The tiers people can buy, and discount codes.
+async function settingsPlans(body) {
+  const switches = h('div', {});
+  await settingsRows(switches, (key) => key.startsWith('payments_') || key === 'premium_currency', 'Selling',
+    'People pay inside the app, by M-Pesa prompt or card, through Paystack. The Paystack key itself lives on the server, not here.');
+  const tiers = ok(await db.from('tiers').select('*').order('sort_order').order('name'));
+  const codes = ok(await db.from('promo_codes').select('*').order('created_at', { ascending: false }));
+  const currency = (ok(await db.from('app_config').select('value').eq('key', 'premium_currency'))[0] || {}).value || 'KES';
+  const price = (n) => (n === null || n === undefined ? 'not sold' : `${currency} ${Number(n).toLocaleString()}`);
+  const tierName = (id) => (tiers.find((t) => t.id === id) || { name: id }).name;
+
+  fill(body,
+    switches,
+    h('div', { class: 'section' },
+      h('div', { class: 'row spread', style: 'margin-bottom:12px' },
+        h('div', {}, h('h2', { style: 'margin:0' }, 'Plans'),
+          h('p', { class: 'muted small', style: 'margin:0' }, 'What people can buy. Each plan has a monthly and a yearly price; leave one empty not to sell it.')),
+        h('button', { class: 'primary', onclick: () => tierDialog(null, tiers.length) }, icon('plus'), 'Add plan')),
+      tiers.length === 0 && h('div', { class: 'card center muted' }, 'No plans yet.'),
+      h('div', { class: 'grid wide' }, tiers.map((t) => h('div', { class: t.active ? 'card click' : 'card click gone', onclick: () => tierDialog(t) },
+        h('div', { class: 'row spread' }, h('h3', {}, t.name),
+          h('div', { class: 'row' }, !t.active && h('span', { class: 'pill' }, 'Not sold'), h('span', { class: 'pill accent' }, `${t.ai_daily_limit} AI a day`))),
+        h('p', { class: 'muted small', style: 'margin:6px 0 10px' }, t.description || 'No description.'),
+        h('div', { class: 'row small', style: 'margin-bottom:8px' },
+          h('span', {}, h('b', {}, price(t.price_month)), ' a month'), h('span', {}, h('b', {}, price(t.price_year)), ' a year')),
+        h('ul', { class: 'small', style: 'margin:0;padding-left:18px' }, (t.features || []).map((f) => h('li', {}, f))),
+        !t.premium_units && h('div', { class: 'muted small', style: 'margin-top:8px' }, 'Does not open premium units.'))))),
+    h('div', { class: 'section' },
+      h('div', { class: 'row spread', style: 'margin-bottom:12px' },
+        h('div', {}, h('h2', { style: 'margin:0' }, 'Discount codes'),
+          h('p', { class: 'muted small', style: 'margin:0' }, 'A code takes a percentage off. 100% makes the plan free (a gift code).')),
+        h('button', { class: 'primary', onclick: () => codeDialog(null, tiers) }, icon('plus'), 'Add code')),
+      codes.length === 0
+        ? h('div', { class: 'card center muted' }, 'No codes yet.')
+        : h('div', { class: 'card table-wrap', style: 'padding:6px' }, h('table', {},
+            h('thead', {}, h('tr', {}, h('th', {}, 'Code'), h('th', {}, 'Off'), h('th', {}, 'For'), h('th', {}, 'Used'), h('th', {}, 'Ends'), h('th', {}, 'Note'), h('th', {}, 'On'), h('th', {}))),
+            h('tbody', {}, codes.map((c) => {
+              const over = (c.max_uses && c.used >= c.max_uses) || (c.expires_at && new Date(c.expires_at) <= new Date());
+              return h('tr', { style: over ? 'opacity:.55' : '' },
+                h('td', {}, h('b', {}, c.code)),
+                h('td', {}, `${c.percent_off}%`),
+                h('td', {}, c.tier ? tierName(c.tier) : 'Any plan'),
+                h('td', {}, c.max_uses ? `${c.used} of ${c.max_uses}` : `${c.used}`),
+                h('td', { class: 'small' }, c.expires_at ? when(c.expires_at) : 'Never'),
+                h('td', { class: 'small muted' }, c.note),
+                h('td', {}, toggle(c.active, async (e) => { await attempt(async () => ok(await db.from('promo_codes').update({ active: e.target.checked }).eq('code', c.code).select()), e.target.checked ? 'Code switched on' : 'Code switched off'); })),
+                h('td', {}, h('div', { class: 'row' },
+                  h('button', { class: 'icon-btn', title: 'Edit', onclick: () => codeDialog(c, tiers) }, icon('edit')),
+                  h('button', { class: 'icon-btn danger', title: 'Delete', onclick: () => confirmDialog(`Delete code ${c.code}?`, 'People who already used it keep what they bought.', 'Delete', async () => { await attempt(async () => ok(await db.from('promo_codes').delete().eq('code', c.code)), 'Code deleted'); render(); }) }, icon('trash')))));
+            }))))));
+}
+
+function tierDialog(tier, nextOrder = 0) {
+  const t = tier || { name: '', description: '', features: [], price_month: null, price_year: null, ai_daily_limit: 200, premium_units: true, sort_order: nextOrder, active: true };
+  const name = h('input', { type: 'text', value: t.name, placeholder: 'e.g. Pro' });
+  const description = h('input', { type: 'text', value: t.description, placeholder: 'One line under the name' });
+  const features = h('textarea', { style: 'min-height:110px' }, (t.features || []).join('\n'));
+  const month = h('input', { type: 'number', min: 0, step: 'any', value: t.price_month ?? '' });
+  const year = h('input', { type: 'number', min: 0, step: 'any', value: t.price_year ?? '' });
+  const ai = h('input', { type: 'number', min: 0, value: t.ai_daily_limit });
+  const order = h('input', { type: 'number', value: t.sort_order });
+  const units = h('input', { type: 'checkbox', checked: t.premium_units });
+  const active = h('input', { type: 'checkbox', checked: t.active });
+  const number = (input) => (input.value === '' || Number(input.value) <= 0 ? null : Number(input.value));
+  dialog((close) => [
+    h('h2', {}, tier ? `Edit ${tier.name}` : 'Add plan'),
+    field('Name', name, 'What people see, e.g. Pro or Max.'),
+    field('Description', description),
+    field('What it offers', features, 'One line each. Shown as a list in the app.'),
+    h('div', { class: 'row' },
+      h('div', { class: 'grow' }, field('Price for a month', month, 'Empty = not sold monthly.')),
+      h('div', { class: 'grow' }, field('Price for a year', year, 'Empty = not sold yearly.'))),
+    h('div', { class: 'row' },
+      h('div', { class: 'grow' }, field('AI requests a day', ai)),
+      h('div', { class: 'grow' }, field('Order', order, 'Lower comes first.'))),
+    h('label', { class: 'check' }, units, 'Opens the premium units of the question bank'),
+    h('label', { class: 'check' }, active, 'On sale'),
+    h('div', { class: 'row' },
+      tier && h('button', { class: 'danger', onclick: () => { close(); confirmDialog(`Delete ${tier.name}?`, 'It can no longer be bought. Accounts on it keep premium until their time runs out, without the plan\'s own AI allowance. To stop selling it but keep it for those who have it, untick "On sale" instead.', 'Delete', async () => { await attempt(async () => ok(await db.from('tiers').delete().eq('id', tier.id)), 'Plan deleted'); render(); }); } }, 'Delete'),
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        if (!name.value.trim()) { toast('Give the plan a name', true); return; }
+        const row = {
+          name: name.value.trim(), description: description.value.trim(),
+          features: features.value.split('\n').map((x) => x.trim()).filter(Boolean),
+          price_month: number(month), price_year: number(year),
+          ai_daily_limit: Math.max(0, Math.round(Number(ai.value) || 0)),
+          premium_units: units.checked, sort_order: Number(order.value) || 0, active: active.checked,
+        };
+        if (row.active && row.price_month === null && row.price_year === null) { toast('Give it at least one price, or untick "On sale"', true); return; }
+        const saved = await attempt(async () => {
+          if (tier) return ok(await db.from('tiers').update(row).eq('id', tier.id).select());
+          return ok(await db.from('tiers').insert({ id: await freeId('tiers', slug(row.name)), ...row }).select());
+        }, 'Saved');
+        if (saved) { close(); render(); }
+      } }, 'Save')),
+  ]);
+}
+
+function codeDialog(code, tiers) {
+  const c = code || { code: '', percent_off: 20, tier: null, max_uses: null, expires_at: null, note: '', active: true };
+  const text = h('input', { type: 'text', value: c.code, placeholder: 'e.g. WELCOME20', disabled: !!code, style: 'text-transform:uppercase' });
+  const percent = h('input', { type: 'number', min: 1, max: 100, value: c.percent_off });
+  const tier = h('select', {}, h('option', { value: '' }, 'Any plan'), tiers.map((t) => h('option', { value: t.id, selected: c.tier === t.id }, t.name)));
+  const uses = h('input', { type: 'number', min: 1, value: c.max_uses ?? '' });
+  const ends = h('input', { type: 'date', value: c.expires_at ? c.expires_at.slice(0, 10) : '' });
+  const note = h('input', { type: 'text', value: c.note, placeholder: 'For you, e.g. who it was given to' });
+  dialog((close) => [
+    h('h2', {}, code ? `Edit ${code.code}` : 'Add code'),
+    field('Code', text, code ? 'A code cannot be renamed. Delete it and add another.' : '3 to 20 letters and digits. People can type it in any case.'),
+    h('div', { class: 'row' },
+      h('div', { class: 'grow' }, field('Percent off', percent, '100 makes the plan free.')),
+      h('div', { class: 'grow' }, field('For', tier))),
+    h('div', { class: 'row' },
+      h('div', { class: 'grow' }, field('How many times it can be used', uses, 'Empty = no limit.')),
+      h('div', { class: 'grow' }, field('Last day', ends, 'Empty = never ends.'))),
+    field('Note', note),
+    h('div', { class: 'row' },
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        const typed = text.value.replace(/\s/g, '').toUpperCase();
+        if (!/^[A-Z0-9]{3,20}$/.test(typed)) { toast('A code is 3 to 20 letters and digits', true); return; }
+        const off = Math.round(Number(percent.value));
+        if (!(off >= 1 && off <= 100)) { toast('Percent off is between 1 and 100', true); return; }
+        const row = {
+          percent_off: off, tier: tier.value || null,
+          max_uses: uses.value === '' ? null : Math.max(1, Math.round(Number(uses.value))),
+          expires_at: ends.value ? new Date(`${ends.value}T23:59:59`).toISOString() : null,
+          note: note.value.trim(),
+        };
+        const saved = await attempt(async () => {
+          if (code) return ok(await db.from('promo_codes').update(row).eq('code', code.code).select());
+          return ok(await db.from('promo_codes').insert({ code: typed, ...row }).select());
+        }, 'Saved');
+        if (saved) { close(); render(); }
+      } }, 'Save')),
+  ]);
 }
 
 async function settingsRows(body, wanted, title, about) {

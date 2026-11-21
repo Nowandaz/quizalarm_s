@@ -30,6 +30,8 @@ class User:
     id: str
     premium: bool
     email: str = ""
+    # The paid tier the account is on ("" = none, or premium given by hand).
+    tier: str = ""
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,7 @@ class Store:
         self._http = http
         self._users: dict[str, tuple[float, User]] = {}
         self._config: tuple[float, dict] | None = None
+        self._tiers: tuple[float, list[dict]] | None = None
 
     # ------------------------------------------------------------ plumbing
 
@@ -97,13 +100,14 @@ class Store:
 
         rows = (
             await self._rest(
-                "GET", "/profiles", params={"id": f"eq.{user_id}", "select": "plan,plan_expires_at"}
+                "GET", "/profiles", params={"id": f"eq.{user_id}", "select": "plan,plan_expires_at,tier"}
             )
         ).json()
         user = User(
             id=user_id,
             premium=bool(rows) and _is_premium(rows[0]),
             email=account.get("email") or "",
+            tier=(rows[0].get("tier") or "") if rows else "",
         )
         if len(self._users) > 5000:
             self._users.clear()
@@ -171,14 +175,42 @@ class Store:
         """Drops what is remembered about a user (their plan just changed)."""
         self._users = {k: v for k, v in self._users.items() if v[1].id != user_id}
 
+    async def tiers(self) -> list[dict]:
+        """The paid tiers the owner defined, in display order (remembered briefly)."""
+        if self._tiers and self._tiers[0] > time.monotonic():
+            return self._tiers[1]
+        rows = (
+            await self._rest("GET", "/tiers", params={"select": "*", "order": "sort_order,name"})
+        ).json()
+        self._tiers = (time.monotonic() + CACHE_SECONDS, rows)
+        return rows
+
     async def plan_of(self, user_id: str) -> dict:
         rows = (
             await self._rest(
-                "GET", "/profiles", params={"id": f"eq.{user_id}", "select": "plan,plan_expires_at"}
+                "GET", "/profiles", params={"id": f"eq.{user_id}", "select": "plan,plan_expires_at,tier"}
             )
         ).json()
         row = rows[0] if rows else {}
-        return {"premium": _is_premium(row), "expires": row.get("plan_expires_at")}
+        premium = _is_premium(row)
+        tier = (row.get("tier") or "") if premium else ""
+        name = next((t["name"] for t in await self.tiers() if t["id"] == tier), "")
+        return {
+            "premium": premium,
+            "tier": tier,
+            "tier_name": name or ("Premium" if premium else ""),
+            "expires": row.get("plan_expires_at") if premium else None,
+        }
+
+    async def quote(self, tier: str, period: str, code: str) -> dict:
+        """The price of a tier for a period with a code applied; worked out
+        in the database, the one place prices are decided."""
+        response = await self._rest(
+            "POST",
+            "/rpc/quote_payment",
+            json={"want_tier": tier, "want_period": period, "want_code": code},
+        )
+        return response.json()
 
     async def start_payment(self, row: dict) -> None:
         await self._rest("POST", "/payments", json=row, headers={"Prefer": "return=minimal"})
