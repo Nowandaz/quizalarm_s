@@ -162,7 +162,12 @@ def build_router(current_user) -> APIRouter:
             raise HTTPException(404, "That payment is not one of yours.")
         status = payment["status"]
         if status == "pending" and request.app.state.settings.paystack_key:
-            charge = await paystack(request, "GET", f"/transaction/verify/{reference}")
+            try:
+                charge = await paystack(request, "GET", f"/transaction/verify/{reference}")
+            except HTTPException:
+                # Paystack does not know the payment yet (its page was never
+                # opened) or cannot be reached: still waiting, not an error.
+                charge = {}
             if charge.get("status") == "success":
                 status = await confirm(store, charge)
             elif charge.get("status") in ("failed", "abandoned", "reversed"):
