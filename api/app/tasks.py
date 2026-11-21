@@ -124,11 +124,20 @@ def feedback_prompt(
         + f"Student answer: {quote(user_answer)}\n"
         f"{verdict}\n"
         'Write "feedback" addressed to the student as "you": plain text, no markdown, '
-        "at most 110 words. If the answer is wrong, first say specifically why their "
-        "answer is wrong (what the thing they chose actually is or does), then explain "
-        "why the correct answer is right. If they did not know, teach the answer step "
-        "by step. If they are right, confirm it and add one point that deepens "
-        "understanding.\n"
+        "at most 70 words.\n"
+        + (
+            ""
+            if need_explanation
+            else "The student already sees the reference explanation next to your reply, "
+            "so do NOT repeat or paraphrase it. Add only what it does not say.\n"
+        )
+        + "If the answer is wrong: say what the thing they chose actually is or does, "
+        "and the specific reason it is tempting here but does not fit this question. "
+        "Finish with one short way to tell the two apart next time.\n"
+        "If they did not know: give one short memory hook (a mnemonic, an image or a "
+        "rule of thumb) for the correct answer. Nothing else.\n"
+        "If they are right: confirm in a few words, then give one exam-relevant point "
+        "that goes beyond the explanation (a common trap, an exception or a contrast).\n"
         + ('Also write "explanation": two or three sentences explaining the correct '
            "answer in general, without mentioning the student.\n" if need_explanation else "")
         + 'Return only JSON: {"correct": true|false, "feedback": "..."'

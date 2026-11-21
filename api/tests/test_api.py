@@ -222,6 +222,17 @@ def test_feedback_keeps_the_verdict_the_app_already_knows(client, world):
     assert data["correct"] is False and data["feedback"].startswith("Not quite")
 
 
+def test_the_tutor_is_told_not_to_repeat_the_explanation(client, world):
+    world.reply = json.dumps({"correct": False, "feedback": "Atropine blocks muscarinic receptors."})
+    client.post("/v1/ai/feedback", headers=auth(), json={
+        "question": "Which drug is a beta blocker?", "options": MCQ["options"],
+        "correct_answer": "Atenolol", "explanation": "Atenolol blocks beta-1 receptors.",
+        "user_answer": "Atropine", "known_verdict": False})
+    sent = json.loads(world.ai_calls[0].content)["contents"][0]["parts"][0]["text"]
+    assert "do NOT repeat or paraphrase it" in sent
+    assert "tempting" in sent and "memory hook" in sent
+
+
 def test_student_text_is_quoted_as_data(client, world):
     world.reply = json.dumps({"correct": False})
     client.post("/v1/ai/grade", headers=auth(), json={

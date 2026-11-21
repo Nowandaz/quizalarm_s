@@ -46,6 +46,10 @@ What each page does:
   7 days (rang, missed, late, by phone model) and the problems people
   reported, each with the diagnostics the app attached and the phone's
   own diary of what happened before.
+- **Payments** (owner): income, who paid, what for, how and when, sales
+  by plan, and who is on which plan. Plans (names, prices, what they
+  offer) and discount codes are under Settings, Plans and codes. See
+  `docs/PAYMENTS.md` for setting up Paystack.
 - **Accounts** (owner): everyone who signed up, with search; change a
   role or plan; delete an account and its data.
 - **Settings** (owner), in two tabs. *AI providers*: add as many as you
@@ -78,6 +82,9 @@ supabase/migrations/   the database, in order:
   0006_alarm_events.sql  alarm diary and problem reports from phones
   0007_review_fixes.sql  fair provider rotation, key safety, withdrawn questions
   0008_delete_my_account.sql  a user can delete their own account
+  0009_payments.sql      buying premium through Paystack
+  0010_tiers_and_codes.sql  plans the owner defines, and discount codes
+  0011_accounts_tier.sql the accounts list shows each account's plan
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL
 tools/make_seed.py     regenerates seed.sql from the app's JSON banks

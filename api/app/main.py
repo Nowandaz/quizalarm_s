@@ -6,6 +6,7 @@
     POST /v1/ai/generate    write new questions on a subject
     POST /v1/ai/feedback    explain an answer to the student
     POST /v1/ai/grade       is this typed answer right (not limited per day)
+    /v1/pay/...             buying premium (see payments.py)
 
 Every /v1 call needs "Authorization: Bearer <the user's Supabase token>".
 Run: uvicorn app.main:app
@@ -23,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
 
-from . import tasks
+from . import payments, tasks
 from .config import Settings
 from .providers import NoProviderError, ask
 from .store import Store, StoreError, User
@@ -77,7 +78,8 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.http = http or httpx.AsyncClient()
-        app.state.store = Store(settings or Settings.from_env(), app.state.http)
+        app.state.settings = settings or Settings.from_env()
+        app.state.store = Store(app.state.settings, app.state.http)
         app.state.recent = defaultdict(deque)  # user id -> times of recent calls
         yield
         if http is None:
@@ -120,10 +122,16 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
         return user
 
     Caller = Annotated[User, Depends(current_user)]
+    app.include_router(payments.build_router(Depends(current_user)))
 
     async def allowance(store: Store, user: User) -> dict:
         config = await store.config()
         limit = config.get("ai_daily_limit_premium" if user.premium else "ai_daily_limit_free", 0)
+        if user.premium and user.tier:
+            # A paid tier sets its own allowance.
+            tier = next((t for t in await store.tiers() if t["id"] == user.tier), None)
+            if tier is not None:
+                limit = tier.get("ai_daily_limit", limit)
         limit = limit if isinstance(limit, int) and limit > 0 else 0
         used = await store.used_today(user.id)
         return {
