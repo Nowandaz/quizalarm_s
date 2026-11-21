@@ -39,6 +39,8 @@ Long = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
 class GenerateRequest(BaseModel):
     subject: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=200)]
     count: int = Field(5, ge=1, le=10)
+    # What the user said a topic of their own should cover (optional).
+    objectives: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ""
     avoid: list[Long] = Field(default_factory=list, max_length=40)
 
 
@@ -171,7 +173,7 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
         status = await require_allowance(store, user, counted=True)
         questions = await ask(
             store, request.app.state.http, tasks.SYSTEM,
-            tasks.generate_prompt(body.subject, body.count, body.avoid),
+            tasks.generate_prompt(body.subject, body.count, body.avoid, body.objectives),
             timeout=60, max_tokens=8192, check=tasks.check_generated(body.count),
         )
         return {"questions": questions, "remaining": await finish(store, user, "generate", status)}

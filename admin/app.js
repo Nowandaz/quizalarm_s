@@ -54,6 +54,7 @@ const ICONS = {
   test: 'M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3M8 15h8',
   layers: 'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5',
   gauge: 'M4 18a8 8 0 1116 0M12 18l4-6',
+  alarm: 'M12 21a8 8 0 100-16 8 8 0 000 16M12 9v4l2.5 2M5 3L2 6M19 3l3 3',
 };
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -299,6 +300,7 @@ function renderShell() {
         h('div', { class: 'brand-sub' }, 'Admin'),
         link('dashboard', 'Dashboard', 'home'),
         link('bank', 'Question bank', 'book'),
+        link('alarms', 'Alarm reports', 'alarm'),
         isOwner() && link('users', 'Accounts', 'users'),
         isOwner() && link('settings', 'Settings', 'settings'),
         h('div', { class: 'who' },
@@ -311,6 +313,7 @@ function renderShell() {
   const pages = {
     dashboard: () => pageDashboard(main),
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
+    alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
     settings: () => (isOwner() ? pageSettings(main, a) : pageDashboard(main)),
   };
@@ -699,6 +702,148 @@ async function exportUnit(unit) {
     link.click();
     URL.revokeObjectURL(link.href);
   }, 'Exported');
+}
+
+// ------------------------------------------------------------ alarm reports
+
+const ALARM_PROBLEMS = {
+  never_rang: 'Alarm never rang',
+  rang_late: 'Alarm rang late',
+  no_sound: 'Alarm rang but had no sound',
+  stopped: 'Alarm stopped unexpectedly',
+  snooze_failed: "Snooze didn't work",
+  other: 'Other',
+};
+const EVENT_NAMES = {
+  created: 'Alarm created', scheduled: 'Scheduled', rang: 'Rang', dismissed: 'Dismissed',
+  snoozed: 'Snoozed', edited: 'Edited', switched_on: 'Switched on', switched_off: 'Switched off',
+  skipped: 'Skipped by the user', deleted: 'Deleted', missed: 'MISSED (noticed by the app)',
+  report: 'Report sent',
+};
+
+function whenExactly(value) {
+  if (!value) return '-';
+  return new Date(value).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function yesNo(value, good = true) {
+  if (value === null || value === undefined) return h('span', { class: 'muted' }, 'unknown');
+  const ok = value === good;
+  return h('span', { class: ok ? 'pill ok' : 'pill bad' }, value ? 'Yes' : 'No');
+}
+
+/** The facts attached to a report, as a two-column list. */
+function diagnosticsBox(d) {
+  if (!d) return h('p', { class: 'muted small' }, 'No diagnostics were attached.');
+  const p = d.permissions || {};
+  const device = d.device || {};
+  const alarm = d.alarm || {};
+  const registered = Object.entries(alarm.registered_with_phone || {});
+  const row = (label, value) => [h('div', { class: 'muted' }, label), h('div', {}, value)];
+  return h('div', { class: 'kv' },
+    row('Scheduled for', whenExactly(d.scheduled)),
+    row('Last actual ring', whenExactly(d.last_actual_ring)),
+    row('Reported at', whenExactly(d.reported_at)),
+    row('Phone', device.model ? `${device.manufacturer} ${device.model}, Android ${device.android} (SDK ${device.sdk})` : (device.platform || 'unknown')),
+    row('App version', d.app_version || '-'),
+    row('Alarm', alarm.id ? `#${alarm.id}, ${alarm.time}, ${(alarm.days || []).length ? 'days ' + alarm.days.join(',') : 'once'}, ${alarm.enabled ? 'on' : 'off'}, snooze ${alarm.snooze_minutes} min${alarm.custom_ringtone ? ', own ringtone' : ''}` : 'not chosen'),
+    row('Registered with the phone', registered.length ? registered.map(([k, v]) => `${k}: ${whenExactly(v)}`).join('; ') : 'nothing'),
+    row('Snoozed recently', yesNo(d.snoozed_recently, false)),
+    row('Edited recently', yesNo(d.edited_recently, false)),
+    row('Switched on/off recently', yesNo(d.switched_recently, false)),
+    row('Alarm sounding when reported', yesNo(d.alarm_service_ringing_now, false)),
+    row('Battery saving switched off for the app', yesNo(p.battery_unrestricted)),
+    row('Notifications allowed', yesNo(p.notifications)),
+    row('Exact alarms allowed', yesNo(p.exact_alarms)),
+    row('Full-screen alarms allowed', yesNo(p.full_screen)),
+    row('May open over other apps', yesNo(p.over_other_apps)),
+    row('App was force-stopped', yesNo(d.force_stopped, false)),
+    row('Why Android last stopped the app', (d.app_exits || []).length
+      ? d.app_exits.map((e) => `${EXIT_REASONS[e.reason] || 'reason ' + e.reason} (${whenExactly(e.at)})${e.description ? ': ' + e.description : ''}`).join('; ')
+      : 'not recorded'));
+}
+// Android's ApplicationExitInfo reasons.
+const EXIT_REASONS = {
+  1: 'exited by itself', 2: 'killed by a signal', 3: 'low memory', 4: 'crash', 5: 'native crash',
+  6: 'not responding', 7: 'start-up failure', 8: 'permission change', 9: 'excessive resource use',
+  10: 'stopped by the user', 11: 'user stopped', 12: 'dependency died', 13: 'other', 14: 'frozen',
+};
+
+async function pageAlarms(main) {
+  let onlyOpen = true;
+  const list = h('div', { class: 'list' });
+  const healthBox = h('div', {});
+  const chips = h('div', { class: 'chips', style: 'margin-bottom:12px' });
+
+  const drawHealth = async () => {
+    const x = ok(await db.rpc('admin_alarm_health', { days: 7 }));
+    const card = (iconName, value, label, bad) => h('div', { class: 'card stat' },
+      h('div', { class: 'ic', style: bad && value > 0 ? 'color:var(--bad)' : '' }, icon(iconName)),
+      h('div', {}, h('b', {}, value ?? 0), h('span', {}, label)));
+    fill(healthBox,
+      h('div', { class: 'grid' },
+        card('alarm', x.rang, 'Alarms rang'),
+        card('alarm', x.missed, 'Missed (noticed by the app)', true),
+        card('gauge', x.late_over_a_minute, 'Rang over a minute late', true),
+        card('edit', x.open_reports, 'Reports to look at', true),
+        card('users', x.phones_reporting, 'Phones reporting')),
+      (x.missed_by_device.length > 0 || x.problems.length > 0) && h('div', { class: 'grid wide', style: 'margin-top:12px' },
+        x.missed_by_device.length > 0 && h('div', { class: 'card' }, h('h3', {}, 'Missed alarms by phone'),
+          h('table', {}, h('tbody', {}, x.missed_by_device.map((d) => h('tr', {}, h('td', {}, d.device || 'unknown'), h('td', {}, `${d.missed} missed`), h('td', { class: 'muted' }, `${d.users} user${d.users === 1 ? '' : 's'}`)))))),
+        x.problems.length > 0 && h('div', { class: 'card' }, h('h3', {}, 'What people reported'),
+          h('table', {}, h('tbody', {}, x.problems.map((p) => h('tr', {}, h('td', {}, ALARM_PROBLEMS[p.problem] || p.problem || 'unknown'), h('td', {}, p.reports))))))));
+  };
+
+  const drawList = async () => {
+    fill(chips,
+      h('button', { class: onlyOpen ? 'chip on' : 'chip', onclick: () => { onlyOpen = true; attempt(drawList); } }, 'To look at'),
+      h('button', { class: !onlyOpen ? 'chip on' : 'chip', onclick: () => { onlyOpen = false; attempt(drawList); } }, 'All reports'));
+    const reports = ok(await db.rpc('admin_alarm_reports', { only_open: onlyOpen, max_rows: 200 }));
+    fill(list, reports.map((r) => {
+      const d = r.detail || {};
+      const rang = d.rang === true;
+      const diary = h('div', {});
+      const details = h('div', { style: 'display:none;margin-top:12px' }, !rang && diagnosticsBox(d.diagnostics), diary);
+      return h('div', { class: r.resolved ? 'card gone' : 'card' },
+        h('div', { class: 'row' },
+          h('div', { class: 'grow' },
+            h('div', { class: 'row' },
+              h('h3', {}, rang ? 'It did ring (the app thought it was missed)' : (ALARM_PROBLEMS[d.problem] || d.problem || 'Problem')),
+              rang ? h('span', { class: 'pill' }, 'False alarm') : h('span', { class: 'pill bad' }, 'Report'),
+              r.resolved && h('span', { class: 'pill ok' }, 'Dealt with')),
+            h('div', { class: 'muted small', style: 'margin-top:4px' },
+              `${whenExactly(r.at)}  \u00b7  ${r.email || 'unknown user'}  \u00b7  ${r.device || 'unknown phone'}  \u00b7  app ${r.app_version || '?'}`),
+            d.note && h('div', { class: 'explain', style: 'margin-top:8px' }, `"${d.note}"`)),
+          h('button', { onclick: (e) => {
+            const open = details.style.display === 'none';
+            details.style.display = open ? '' : 'none';
+            e.currentTarget.textContent = open ? 'Hide details' : 'Details';
+          } }, 'Details'),
+          h('button', { onclick: () => attempt(async () => {
+            const events = ok(await db.rpc('admin_alarm_events', { target: r.user_id, around: r.at, hours: 24 }));
+            details.style.display = '';
+            fill(diary, h('h3', { style: 'margin-top:14px' }, 'What the phone recorded in the 24 hours before'),
+              events.length === 0 ? h('p', { class: 'muted small' }, 'Nothing was recorded.') :
+              h('table', {}, h('tbody', {}, events.map((e) => h('tr', { style: e.type === 'missed' ? 'color:var(--bad)' : '' },
+                h('td', { class: 'small' }, whenExactly(e.at)),
+                h('td', {}, EVENT_NAMES[e.type] || e.type),
+                h('td', { class: 'small muted' }, e.alarm_id ? `alarm #${e.alarm_id}` : ''),
+                h('td', { class: 'small muted' }, e.type === 'report' ? '' : Object.entries(e.detail || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ')))))));
+          }) }, 'Diary'),
+          h('button', { class: r.resolved ? '' : 'primary', onclick: async () => {
+            await attempt(async () => ok(await db.rpc('admin_resolve_alarm_report', { report_id: r.id, is_resolved: !r.resolved })), r.resolved ? 'Reopened' : 'Marked as dealt with');
+            attempt(drawList); attempt(drawHealth);
+          } }, r.resolved ? 'Reopen' : 'Dealt with')),
+        details);
+    }), reports.length === 0 && h('div', { class: 'card center muted' }, onlyOpen ? 'No reports waiting. ' : 'No reports yet.'));
+  };
+
+  fill(main,
+    pageHead('Alarm reports', 'How alarms behaved on people\'s phones in the last 7 days, and the problems they reported.'),
+    healthBox,
+    h('div', { class: 'section' }, h('h2', {}, 'Reports'), chips, list));
+  await drawHealth();
+  await drawList();
 }
 
 // ----------------------------------------------------------------- accounts
