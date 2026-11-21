@@ -174,8 +174,10 @@ async function start() {
   render();
 }
 
+let changingPassword = false;
 db.auth.onAuthStateChange((event) => {
-  if (event === 'PASSWORD_RECOVERY') { renderNewPassword(); return; }
+  if (event === 'PASSWORD_RECOVERY') { changingPassword = true; renderNewPassword(); return; }
+  if (changingPassword) return; // the new-password page decides what shows next
   if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') setTimeout(start, 0);
 });
 window.addEventListener('hashchange', render);
@@ -256,7 +258,15 @@ function renderNewPassword() {
       field('New password', password, 'At least 6 characters.'),
       h('button', { class: 'primary', style: 'width:100%;justify-content:center', onclick: async () => {
         const done = await attempt(async () => ok(await db.auth.updateUser({ password: password.value })), 'Password changed');
-        if (done) start();
+        if (!done) return;
+        // People using the app (not admins) land here from "Forgot
+        // password?" in the app: send them back to it.
+        await attempt(loadProfile);
+        if (isAdmin()) { changingPassword = false; start(); return; }
+        await db.auth.signOut();
+        fill(app, h('div', { class: 'auth' },
+          h('h1', {}, 'Password changed'),
+          h('div', { class: 'card' }, h('p', {}, `Go back to the ${CONFIG.appName} app and sign in with your new password.`))));
       } }, 'Save password'))));
 }
 
