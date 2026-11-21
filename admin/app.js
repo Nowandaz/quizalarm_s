@@ -55,6 +55,7 @@ const ICONS = {
   layers: 'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5',
   gauge: 'M4 18a8 8 0 1116 0M12 18l4-6',
   alarm: 'M12 21a8 8 0 100-16 8 8 0 000 16M12 9v4l2.5 2M5 3L2 6M19 3l3 3',
+  card: 'M3 6h18v12H3zM3 10h18M7 15h4',
 };
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -312,6 +313,7 @@ function renderShell() {
         link('bank', 'Question bank', 'book'),
         link('alarms', 'Alarm reports', 'alarm'),
         isOwner() && link('users', 'Accounts', 'users'),
+        isOwner() && link('payments', 'Payments', 'card'),
         isOwner() && link('settings', 'Settings', 'settings'),
         h('div', { class: 'who' },
           h('div', { style: 'font-weight:700' }, name),
@@ -325,6 +327,7 @@ function renderShell() {
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
     alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
+    payments: () => (isOwner() ? pagePayments(main) : pageDashboard(main)),
     settings: () => (isOwner() ? pageSettings(main, a) : pageDashboard(main)),
   };
   attempt(pages[page] || pages.dashboard);
@@ -905,6 +908,53 @@ async function pageUsers(main) {
   await load();
 }
 
+// ----------------------------------------------------------------- payments
+
+/** Paystack counts money in the smallest unit (cents); show whole units. */
+function money(amount, currency) {
+  return `${currency} ${(Number(amount) / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+async function pagePayments(main) {
+  const totals = ok(await db.rpc('admin_payment_totals', { days: 30 }));
+  const payments = ok(await db.rpc('admin_list_payments', { max_rows: 300 }));
+  const config = ok(await db.from('app_config').select('key, value').eq('key', 'payments_enabled'));
+  const selling = config[0] && config[0].value === true;
+  const card = (iconName, value, label) => h('div', { class: 'card stat' },
+    h('div', { class: 'ic' }, icon(iconName)), h('div', {}, h('b', {}, value ?? 0), h('span', {}, label)));
+  const STATUS = { paid: ['pill ok', 'Paid'], pending: ['pill', 'Not finished'], failed: ['pill bad', 'Failed'] };
+
+  fill(main,
+    pageHead('Payments', 'Premium bought in the app through Paystack, last 30 days at the top.',
+      h('button', { onclick: () => { location.hash = '#/settings/premium'; } }, icon('edit'), 'Prices')),
+    !selling && h('div', { class: 'card row', style: 'border-color:var(--bad)' }, icon('card'),
+      h('div', { class: 'grow' }, h('b', {}, 'Selling premium is switched off'),
+        h('div', { class: 'muted small' }, 'People cannot buy premium in the app until you switch it on under Settings, Premium prices.'))),
+    h('div', { class: 'grid' },
+      totals.income.length === 0
+        ? card('card', '0', 'Income, last 30 days')
+        : totals.income.map((i) => card('card', money(i.amount, i.currency), `Income, last 30 days (${i.payments} payment${i.payments === 1 ? '' : 's'})`)),
+      card('check', totals.paid, 'Paid'),
+      card('gauge', totals.pending, 'Started, not finished'),
+      card('edit', totals.failed, 'Failed'),
+      card('users', totals.premium_users, 'Premium accounts now')),
+    h('div', { class: 'section' }, h('h2', {}, 'All payments'),
+      payments.length === 0
+        ? h('div', { class: 'card center muted' }, 'No payments yet.')
+        : h('div', { class: 'card table-wrap', style: 'padding:6px' },
+            h('table', {},
+              h('thead', {}, h('tr', {}, h('th', {}, 'When'), h('th', {}, 'Account'), h('th', {}, 'Bought'), h('th', {}, 'Amount'), h('th', {}, 'Status'), h('th', {}, 'Paid with'), h('th', {}, 'Reference'))),
+              h('tbody', {}, payments.map((p) => h('tr', {},
+                h('td', { class: 'small' }, whenExactly(p.paid_at || p.created_at)),
+                h('td', {}, p.email || h('span', { class: 'muted' }, 'deleted account')),
+                h('td', {}, `${p.days} days`),
+                h('td', {}, money(p.amount, p.currency)),
+                h('td', {}, h('span', { class: (STATUS[p.status] || ['pill'])[0] }, (STATUS[p.status] || ['', p.status])[1]),
+                  p.note && h('div', { class: 'small', style: 'color:var(--bad)' }, p.note)),
+                h('td', { class: 'small' }, (p.channel || '').replace('_', ' ') || '-'),
+                h('td', { class: 'small muted' }, p.reference))))))));
+}
+
 // ----------------------------------------------------------------- settings
 
 // Ready-made starting points for the "Add provider" form. "openai" is the
@@ -1033,13 +1083,22 @@ function providerDialog(provider) {
 }
 
 async function pageSettings(main, tab) {
-  const current = tab === 'limits' ? 'limits' : 'providers';
+  const current = ['limits', 'premium'].includes(tab) ? tab : 'providers';
   const tabs = h('div', { class: 'tabs' },
     h('a', { class: current === 'providers' ? 'on' : '', href: '#/settings/providers' }, icon('spark'), 'AI providers'),
-    h('a', { class: current === 'limits' ? 'on' : '', href: '#/settings/limits' }, icon('gauge'), 'AI limits'));
+    h('a', { class: current === 'limits' ? 'on' : '', href: '#/settings/limits' }, icon('gauge'), 'AI limits'),
+    h('a', { class: current === 'premium' ? 'on' : '', href: '#/settings/premium' }, icon('card'), 'Premium prices'));
   const body = h('div', {});
   fill(main, pageHead('Settings', 'Only owners see this page.'), tabs, body);
-  if (current === 'limits') await settingsLimits(body); else await settingsProviders(body);
+  if (current === 'limits') {
+    await settingsRows(body, (key) => key.startsWith('ai_'), 'AI limits',
+      'How much AI each person may use, and a switch for all AI features.');
+  } else if (current === 'premium') {
+    await settingsRows(body, (key) => key.startsWith('premium_') || key.startsWith('payments_'), 'Premium prices',
+      'What premium costs in the app. People pay on Paystack\'s page; the Paystack key itself lives on the server, not here. Prices are in whole units of the currency (300 = KES 300).');
+  } else {
+    await settingsProviders(body);
+  }
 }
 
 async function settingsProviders(body) {
@@ -1071,9 +1130,9 @@ async function settingsProviders(body) {
         h('button', { class: 'icon-btn danger', title: 'Delete', onclick: () => confirmDialog(`Delete "${p.name}"?`, 'Its key is removed for good.', 'Delete', async () => { await attempt(async () => ok(await db.rpc('admin_delete_ai_provider', { provider_id: p.id })), 'Provider deleted'); render(); }) }, icon('trash')))))));
 }
 
-async function settingsLimits(body) {
+async function settingsRows(body, wanted, title, about) {
   const config = ok(await db.from('app_config').select('*').order('key'));
-  const rows = config.map((row) => {
+  const rows = config.filter((row) => wanted(row.key)).map((row) => {
     const kind = typeof row.value;
     const save = async (value) => { await attempt(async () => ok(await db.from('app_config').update({ value }).eq('key', row.key).select()), 'Saved'); };
     const input = kind === 'boolean'
@@ -1084,8 +1143,8 @@ async function settingsLimits(body) {
       h('div', { class: 'grow' }, h('b', {}, row.note || row.key), h('div', { class: 'muted small' }, row.key)), input);
   });
   fill(body, 
-    h('h2', { style: 'margin:0' }, 'AI limits'),
-    h('p', { class: 'muted small' }, 'How much AI each person may use, and a switch for all AI features.'),
+    h('h2', { style: 'margin:0' }, title),
+    h('p', { class: 'muted small' }, about),
     h('div', { class: 'list' }, rows));
 }
 

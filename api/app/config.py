@@ -9,6 +9,11 @@ class Settings:
     supabase_url: str
     publishable_key: str
     secret_key: str
+    # Paystack secret key. Empty = payments are not set up on this server.
+    paystack_key: str = ""
+    # This server's public address (no trailing slash), for the page
+    # Paystack sends people back to after paying.
+    public_url: str = ""
 
     @staticmethod
     def from_env() -> "Settings":
@@ -22,4 +27,6 @@ class Settings:
             supabase_url=need("SUPABASE_URL").rstrip("/"),
             publishable_key=need("SUPABASE_PUBLISHABLE_KEY"),
             secret_key=need("SUPABASE_SECRET_KEY"),
+            paystack_key=os.environ.get("PAYSTACK_SECRET_KEY", "").strip(),
+            public_url=os.environ.get("PUBLIC_URL", "").strip().rstrip("/"),
         )

@@ -28,6 +28,10 @@
       { key: 'ai_daily_limit_free', value: 10, note: 'AI calls a free user may make each day' },
       { key: 'ai_daily_limit_premium', value: 200, note: 'AI calls a premium user may make each day' },
       { key: 'ai_enabled', value: true, note: 'Turn all AI features on or off' },
+      { key: 'payments_enabled', value: true, note: 'Let people buy premium in the app' },
+      { key: 'premium_currency', value: 'KES', note: 'Currency of the prices (as set up on Paystack): KES, NGN, GHS, ZAR or USD' },
+      { key: 'premium_price_month', value: 300, note: 'Price of 30 days of premium' },
+      { key: 'premium_price_year', value: 2500, note: 'Price of 365 days of premium' },
     ],
   };
   const q = (topic, n, extra) => tables.questions.push({
@@ -108,7 +112,15 @@
     { id: 4, at: ago(1625), alarm_id: 482913, type: 'rang', detail: { late_seconds: 3 } },
   ];
 
+  const payRows = [
+    { id: 3, created_at: ago(200), paid_at: ago(198), email: 'brian@example.com', plan: 'year', days: 365, amount: 250000, currency: 'KES', status: 'paid', channel: 'mobile_money', note: '', reference: 'bw_4f1c9a0e7d' },
+    { id: 2, created_at: ago(1500), paid_at: null, email: 'chao@example.com', plan: 'month', days: 30, amount: 30000, currency: 'KES', status: 'pending', channel: '', note: '', reference: 'bw_a81b33c0f2' },
+    { id: 1, created_at: ago(4000), paid_at: ago(3998), email: 'amina@example.com', plan: 'month', days: 30, amount: 30000, currency: 'KES', status: 'paid', channel: 'card', note: '', reference: 'bw_0c77de19b5' },
+  ];
+
   const rpcs = {
+    admin_list_payments: () => payRows,
+    admin_payment_totals: () => ({ paid: 2, pending: 1, failed: 0, premium_users: 2, income: [{ currency: 'KES', amount: 280000, payments: 2 }] }),
     admin_alarm_health: () => ({ rang: 412, missed: 9, reports: 2, open_reports: alarmReports.filter((r) => !r.resolved && !r.detail.rang).length, false_alarms: 1, late_over_a_minute: 6, phones_reporting: 38,
       missed_by_device: [{ device: 'Tecno Camon 30 (Android 14)', missed: 5, users: 3 }, { device: 'Xiaomi Redmi Note 13 (Android 14)', missed: 3, users: 2 }, { device: 'Samsung SM-A155F (Android 15)', missed: 1, users: 1 }],
       problems: [{ problem: 'never_rang', reports: 1 }, { problem: 'no_sound', reports: 1 }] }),

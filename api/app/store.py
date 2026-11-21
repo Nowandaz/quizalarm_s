@@ -29,6 +29,7 @@ class StoreError(Exception):
 class User:
     id: str
     premium: bool
+    email: str = ""
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,8 @@ class Store:
             return None
         if response.status_code != 200:
             raise StoreError(f"Supabase sign-in check answered {response.status_code}")
-        user_id = response.json().get("id")
+        account = response.json()
+        user_id = account.get("id")
         if not user_id:
             return None
 
@@ -98,7 +100,11 @@ class Store:
                 "GET", "/profiles", params={"id": f"eq.{user_id}", "select": "plan,plan_expires_at"}
             )
         ).json()
-        user = User(id=user_id, premium=bool(rows) and _is_premium(rows[0]))
+        user = User(
+            id=user_id,
+            premium=bool(rows) and _is_premium(rows[0]),
+            email=account.get("email") or "",
+        )
         if len(self._users) > 5000:
             self._users.clear()
         self._users[digest] = (time.monotonic() + CACHE_SECONDS, user)
@@ -158,6 +164,53 @@ class Store:
             await self._rest("DELETE", "/ai_usage", params={"id": f"eq.{use_id}"})
         except StoreError:
             pass
+
+    # ------------------------------------------------------------ payments
+
+    def forget_user(self, user_id: str) -> None:
+        """Drops what is remembered about a user (their plan just changed)."""
+        self._users = {k: v for k, v in self._users.items() if v[1].id != user_id}
+
+    async def plan_of(self, user_id: str) -> dict:
+        rows = (
+            await self._rest(
+                "GET", "/profiles", params={"id": f"eq.{user_id}", "select": "plan,plan_expires_at"}
+            )
+        ).json()
+        row = rows[0] if rows else {}
+        return {"premium": _is_premium(row), "expires": row.get("plan_expires_at")}
+
+    async def start_payment(self, row: dict) -> None:
+        await self._rest("POST", "/payments", json=row, headers={"Prefer": "return=minimal"})
+
+    async def payment(self, reference: str, user_id: str) -> dict | None:
+        rows = (
+            await self._rest(
+                "GET",
+                "/payments",
+                params={
+                    "reference": f"eq.{reference}",
+                    "user_id": f"eq.{user_id}",
+                    "select": "reference,plan,days,amount,currency,status",
+                },
+            )
+        ).json()
+        return rows[0] if rows else None
+
+    async def apply_payment(self, reference: str, amount: int, currency: str, channel: str) -> str:
+        """Marks a payment as paid and adds its days (the database checks the
+        amount). Returns 'paid', 'failed' or 'unknown'."""
+        response = await self._rest(
+            "POST",
+            "/rpc/apply_payment",
+            json={
+                "pay_reference": reference,
+                "paid_amount": amount,
+                "paid_currency": currency,
+                "pay_channel": channel,
+            },
+        )
+        return str(response.json())
 
     # ----------------------------------------------------------- providers
 

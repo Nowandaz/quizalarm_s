@@ -18,6 +18,10 @@ the token is the one Supabase gives the app when the user signs in.
 | `POST /v1/ai/generate` | `{"subject", "count" (1-10), "avoid": [existing question texts]}` | `{"questions": [{"type", "text", "options", "answer", "alt_answers", "explanation"}], "remaining"}` |
 | `POST /v1/ai/feedback` | `{"question", "options", "correct_answer", "explanation", "user_answer", "known_verdict"}` | `{"correct", "feedback", "explanation", "remaining"}` |
 | `POST /v1/ai/grade` | `{"question", "correct_answer", "user_answer"}` | `{"correct"}` |
+| `GET /v1/pay/plans` | - | `{"enabled", "plans": [{"id", "days", "price", "currency"}], "premium", "expires"}` |
+| `POST /v1/pay/start` | `{"plan": "month" or "year"}` | `{"reference", "url"}` (Paystack's payment page) |
+| `GET /v1/pay/verify?reference=...` | - | `{"status": "pending", "paid" or "failed", "premium", "expires"}` |
+| `POST /v1/pay/webhook` | Paystack's message, signed | `{"ok": true}` (no sign-in) |
 
 Errors come back as `{"detail": "a sentence the app can show"}`:
 `401` not signed in, `422` request too big or malformed, `429` daily limit
