@@ -76,6 +76,7 @@ supabase/migrations/   the database, in order:
   0004_owner_admin.sql   owner role, account management, settings, keys
   0005_ai_providers.sql  AI providers used in turn (round robin)
   0006_alarm_events.sql  alarm diary and problem reports from phones
+  0007_review_fixes.sql  fair provider rotation, key safety, withdrawn questions
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL
 tools/make_seed.py     regenerates seed.sql from the app's JSON banks

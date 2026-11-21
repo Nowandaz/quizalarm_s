@@ -30,6 +30,7 @@ class World:
                          "user-2": {"plan": "premium", "plan_expires_at": None}}
         self.config = {"ai_enabled": True, "ai_daily_limit_free": 2, "ai_daily_limit_premium": 50}
         self.usage: list[dict] = []
+        self.next_id = 0
         self.providers = [
             {"id": "p1", "name": "Gemini", "type": "gemini", "api_key": "g-key", "endpoint": "", "model": "gem-1", "uses": 0},
             {"id": "p2", "name": "Groq", "type": "openai", "api_key": "q-key", "endpoint": "https://groq.test/v1", "model": "oss", "uses": 0},
@@ -77,9 +78,15 @@ class World:
             kinds = params["kind"].removeprefix("in.(").removesuffix(")").split(",")
             n = sum(1 for u in self.usage if u["user_id"] == user and u["kind"] in kinds)
             return httpx.Response(200, json=[], headers={"content-range": f"*/{n}"})
+        if path == "/rest/v1/ai_usage" and request.method == "DELETE":
+            use_id = int(params["id"].removeprefix("eq."))
+            self.usage = [u for u in self.usage if u["id"] != use_id]
+            return httpx.Response(204)
         if path == "/rest/v1/ai_usage":
-            self.usage.append(json.loads(request.content))
-            return httpx.Response(201)
+            self.next_id += 1
+            row = {**json.loads(request.content), "id": self.next_id}
+            self.usage.append(row)
+            return httpx.Response(201, json=[row])
         if path == "/rest/v1/rpc/pick_ai_provider":
             skip = json.loads(request.content)["skip"]
             choices = [p for p in self.providers if p["id"] not in skip]
@@ -141,7 +148,7 @@ def test_generate_returns_clean_questions_and_counts_use(client, world):
     assert data["questions"][0]["answer"] == "Atenolol"          # copied exactly from the options
     assert data["questions"][1]["alt_answers"] == ["Epinephrine"]  # the answer itself is dropped
     assert data["remaining"] == 1
-    assert world.usage == [{"user_id": "user-1", "kind": "generate"}]
+    assert world.usage == [{"user_id": "user-1", "kind": "generate", "id": 1}]
 
 
 def test_providers_take_turns(client, world):
@@ -165,6 +172,16 @@ def test_unusable_questions_move_on_to_the_next_provider(client, world):
     assert response.status_code == 503
     assert len(world.ai_calls) == 3 and len(world.errors) == 3
     assert world.usage == []   # a failed request does not use up the allowance
+
+
+def test_a_provider_that_recovers_has_its_error_cleared(client, world):
+    world.broken.add("generativelanguage.googleapis.com")
+    client.post("/v1/ai/generate", json=GENERATE, headers=auth("rich"))
+    assert "500" in world.errors["p1"]
+    world.broken.clear()
+    world.providers[1]["uses"] = world.providers[2]["uses"] = 99   # Gemini's turn again
+    assert client.post("/v1/ai/generate", json=GENERATE, headers=auth("rich")).status_code == 200
+    assert world.errors["p1"] == ""
 
 
 def test_no_providers_is_a_clear_error(client, world):
@@ -220,7 +237,7 @@ def test_grading_is_not_stopped_by_the_daily_limit(client, world):
     response = client.post("/v1/ai/grade", headers=auth(), json={
         "question": "Drug of choice for anaphylaxis?", "correct_answer": "Adrenaline", "user_answer": "epinefrine"})
     assert response.json() == {"correct": True}
-    assert world.usage == [{"user_id": "user-1", "kind": "grade"}]
+    assert world.usage == [{"user_id": "user-1", "kind": "grade", "id": 1}]
 
 
 def test_oversized_requests_are_refused(client, world):

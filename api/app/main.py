@@ -147,13 +147,21 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
             raise HTTPException(429, f"You have used today's {status['limit']} AI requests. They reset at midnight UTC.")
         return status
 
-    async def finish(store: Store, user: User, kind: str, status: dict) -> int | None:
-        """Records a successful call; returns what is left today, if counted."""
+    async def counted(store: Store, user: User, kind: str, work):
+        """Runs an AI task that counts towards the daily limit.
+
+        The use is written down BEFORE the AI is called and taken back if
+        the call fails. That way many requests sent at the same moment
+        cannot all slip under the limit, and a failure costs nothing.
+        """
+        status = await require_allowance(store, user, counted=True)
+        use_id = await store.record_use(user.id, kind)
         try:
-            await store.record_use(user.id, kind)
-        except StoreError as error:
-            log.error("could not record AI use: %s", error)
-        return status["remaining"] - 1 if status else None
+            result = await work()
+        except BaseException:
+            await store.release_use(use_id)
+            raise
+        return result, status["remaining"] - 1
 
     @app.get("/health")
     async def health():
@@ -170,40 +178,43 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
     @app.post("/v1/ai/generate")
     async def generate(body: GenerateRequest, request: Request, user: Caller):
         store = request.app.state.store
-        status = await require_allowance(store, user, counted=True)
-        questions = await ask(
+        questions, remaining = await counted(store, user, "generate", lambda: ask(
             store, request.app.state.http, tasks.SYSTEM,
             tasks.generate_prompt(body.subject, body.count, body.avoid, body.objectives),
-            timeout=60, max_tokens=8192, check=tasks.check_generated(body.count),
-        )
-        return {"questions": questions, "remaining": await finish(store, user, "generate", status)}
+            timeout=45, deadline=120, max_tokens=8192, check=tasks.check_generated(body.count),
+        ))
+        return {"questions": questions, "remaining": remaining}
 
     @app.post("/v1/ai/feedback")
     async def feedback(body: FeedbackRequest, request: Request, user: Caller):
         store = request.app.state.store
-        status = await require_allowance(store, user, counted=True)
-        result = await ask(
+        result, remaining = await counted(store, user, "feedback", lambda: ask(
             store, request.app.state.http, tasks.SYSTEM,
             tasks.feedback_prompt(body.question, body.options, body.correct_answer,
                                   body.explanation, body.user_answer, body.known_verdict),
-            timeout=25, max_tokens=1024, check=tasks.check_feedback,
-        )
+            timeout=20, deadline=45, max_tokens=1024, check=tasks.check_feedback,
+        ))
         if not body.user_answer:
             result["correct"] = False
         elif body.known_verdict is not None:
             result["correct"] = body.known_verdict
-        return {**result, "remaining": await finish(store, user, "feedback", status)}
+        return {**result, "remaining": remaining}
 
     @app.post("/v1/ai/grade")
     async def grade(body: GradeRequest, request: Request, user: Caller):
         store = request.app.state.store
         await require_allowance(store, user, counted=False)
+        # Short: this runs while an alarm rings, and the app falls back to
+        # its own marking after five seconds.
         correct = await ask(
             store, request.app.state.http, tasks.SYSTEM,
             tasks.grade_prompt(body.question, body.correct_answer, body.user_answer),
-            timeout=6, max_tokens=64, check=tasks.check_grade,
+            timeout=4, deadline=4.5, max_tokens=256, check=tasks.check_grade,
         )
-        await finish(store, user, "grade", {})
+        try:
+            await store.record_use(user.id, "grade")
+        except StoreError as error:
+            log.error("could not record AI use: %s", error)
         return {"correct": correct}
 
     return app
