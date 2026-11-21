@@ -138,13 +138,26 @@ class Store:
             raise StoreError("Supabase did not return a usage count")
         return int(total)
 
-    async def record_use(self, user_id: str, kind: str) -> None:
-        await self._rest(
-            "POST",
-            "/ai_usage",
-            json={"user_id": user_id, "kind": kind},
-            headers={"Prefer": "return=minimal"},
-        )
+    async def record_use(self, user_id: str, kind: str) -> int | None:
+        """Notes one AI call and returns the note's id (see release_use)."""
+        rows = (
+            await self._rest(
+                "POST",
+                "/ai_usage",
+                json={"user_id": user_id, "kind": kind},
+                headers={"Prefer": "return=representation"},
+            )
+        ).json()
+        return rows[0].get("id") if rows else None
+
+    async def release_use(self, use_id: int | None) -> None:
+        """Takes back a note made for a call that then failed."""
+        if use_id is None:
+            return
+        try:
+            await self._rest("DELETE", "/ai_usage", params={"id": f"eq.{use_id}"})
+        except StoreError:
+            pass
 
     # ----------------------------------------------------------- providers
 

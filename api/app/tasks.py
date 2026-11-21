@@ -24,7 +24,7 @@ def quote(text: str) -> str:
 
 # ---------------------------------------------------------------- generate
 
-def generate_prompt(subject: str, count: int, avoid: list[str]) -> str:
+def generate_prompt(subject: str, count: int, avoid: list[str], objectives: str = "") -> str:
     avoid_block = ""
     if avoid:
         avoid_block = "Do not repeat or rephrase these existing questions:\n" + "\n".join(
@@ -33,6 +33,8 @@ def generate_prompt(subject: str, count: int, avoid: list[str]) -> str:
     return (
         f"Write {count} exam-style revision questions.\n"
         f"Subject: {quote(subject)}.\n"
+        + (f"The student wants it to cover: {quote(objectives)}. Keep to that.\n" if objectives.strip() else "")
+        +
         f'Mix the two types: "mcq" (exactly {OPTION_COUNT} distinct options, one correct, '
         '"answer" copied exactly from the options) and "saq" (short answer of one to '
         'three words, "options" empty, with "alt_answers" listing other names or '

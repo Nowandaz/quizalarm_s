@@ -42,6 +42,10 @@ What each page does:
   questions; mark a unit premium; 5-option or typed questions with
   accepted alternatives, explanation, picture upload and draft status;
   import or export a unit as a JSON file in the app's bank format.
+- **Alarm reports**: how alarms behaved on people's phones in the last
+  7 days (rang, missed, late, by phone model) and the problems people
+  reported, each with the diagnostics the app attached and the phone's
+  own diary of what happened before.
 - **Accounts** (owner): everyone who signed up, with search; change a
   role or plan; delete an account and its data.
 - **Settings** (owner), in two tabs. *AI providers*: add as many as you
@@ -71,6 +75,9 @@ supabase/migrations/   the database, in order:
   0003_storage.sql       bucket for question pictures
   0004_owner_admin.sql   owner role, account management, settings, keys
   0005_ai_providers.sql  AI providers used in turn (round robin)
+  0006_alarm_events.sql  alarm diary and problem reports from phones
+  0007_review_fixes.sql  fair provider rotation, key safety, withdrawn questions
+  0008_delete_my_account.sql  a user can delete their own account
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL
 tools/make_seed.py     regenerates seed.sql from the app's JSON banks

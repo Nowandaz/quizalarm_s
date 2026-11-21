@@ -95,6 +95,51 @@ select pg_temp.expect(
   (select count(*) from public.pick_ai_provider(
      array(select id from public.ai_providers where name = 'Groq main'))) = 0,
   'when nothing usable is left, the server gets nothing (and can say so)');
+-- Review fixes (0007).
+reset role;
+delete from public.ai_providers;
+insert into public.ai_providers (name, type, api_key, endpoint, model, weight, uses)
+  values ('Old', 'openai', 'old-key-1111', 'https://old.example/v1', 'm', 1, 1000);
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000a');
+select public.admin_save_ai_provider(null, 'New', 'openai', 'new-key-2222', 'https://new.example/v1', 'm', 2, true);
+select pg_temp.expect((select uses = 2000 from public.admin_list_ai_providers() where name = 'New'),
+  'a new provider starts level with the others instead of taking every call');
+select pg_temp.refused($$select public.admin_save_ai_provider(
+    (select id from public.admin_list_ai_providers() where name = 'Old'),
+    'Old', 'openai', '', 'https://evil.example/v1', 'm', 1, true)$$,
+  'the saved key cannot be pointed at a new address without typing it again');
+select public.admin_save_ai_provider(
+    (select id from public.admin_list_ai_providers() where name = 'Old'),
+    'Old renamed', 'openai', '', 'https://old.example/v1', 'm2', 1, true);
+select pg_temp.expect((select count(*) = 1 from public.admin_list_ai_providers() where name = 'Old renamed' and model = 'm2'),
+  'other details still change without the key');
+select public.admin_set_ai_provider_enabled((select id from public.admin_list_ai_providers() where name = 'New'), false);
+reset role;
+update public.ai_providers set uses = 5000 where name = 'Old renamed';
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000a');
+select public.admin_set_ai_provider_enabled((select id from public.admin_list_ai_providers() where name = 'New'), true);
+select pg_temp.expect((select uses = 10000 from public.admin_list_ai_providers() where name = 'New'),
+  'a re-enabled provider is levelled too');
+
+-- Withdrawn questions are listed by id for phones, to anyone.
+reset role;
+insert into public.units (id, name) values ('tomb-u', 'Tomb');
+insert into public.topics (id, unit_id, name) values ('tomb-t', 'tomb-u', 'Tomb');
+insert into public.questions (id, topic_id, type, text, answer, status) values
+  ('tomb-live', 'tomb-t', 'saq', 'Live?', 'yes', 'published'),
+  ('tomb-draft', 'tomb-t', 'saq', 'Draft?', 'yes', 'draft');
+insert into public.questions (id, topic_id, type, text, answer, deleted_at) values
+  ('tomb-gone', 'tomb-t', 'saq', 'Gone?', 'yes', now());
+select pg_temp.act_as(null);
+select pg_temp.expect(
+  (select array_agg(id order by id) = array['tomb-draft', 'tomb-gone']
+   from public.question_tombstones(now() - interval '1 hour') where id like 'tomb-%'),
+  'a phone learns which questions were withdrawn, and only their ids');
+select pg_temp.expect((select count(*) = 0 from public.question_tombstones(now() + interval '1 hour')),
+  'nothing older than the moment asked for is listed');
+reset role;
+delete from public.units where id = 'tomb-u';
+
 reset role;
 
 \echo AI PROVIDER TESTS PASSED

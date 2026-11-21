@@ -6,6 +6,7 @@ OpenRouter and anything compatible), "gemini" (Google) and "anthropic".
 the next when one fails.
 """
 
+import asyncio
 import json
 import logging
 
@@ -21,6 +22,9 @@ DEFAULT_ENDPOINT = {
     "anthropic": "https://api.anthropic.com/v1",
 }
 MAX_PROVIDERS_PER_REQUEST = 3
+
+# Providers whose last call from this server failed.
+_had_error: set[str] = set()
 
 
 class ProviderError(Exception):
@@ -132,26 +136,42 @@ async def ask(
     prompt: str,
     *,
     timeout: float,
+    deadline: float,
     max_tokens: int = 4096,
     check=None,
 ):
     """Asks the providers in turn until one gives a usable answer.
 
+    `timeout` is how long one provider may take; `deadline` is how long the
+    whole request may take, kept below what the app waits for, so the
+    server never keeps working (and counting) for an answer nobody sees.
+
     `check(data)` may turn the parsed JSON into the final result, raising
     ProviderError if it is not usable (so the next provider gets a try).
     """
     skip: list[str] = []
-    for _ in range(MAX_PROVIDERS_PER_REQUEST):
-        provider = await store.pick_provider(skip)
-        if provider is None:
-            break
-        try:
-            data = await call_provider(
-                http, provider, system, prompt, timeout=timeout, max_tokens=max_tokens
-            )
-            return check(data) if check else data
-        except ProviderError as error:
-            log.warning("provider %s failed: %s", provider.name, error)
-            await store.report_provider_error(provider.id, str(error))
-            skip.append(provider.id)
+    try:
+        async with asyncio.timeout(deadline):
+            for _ in range(MAX_PROVIDERS_PER_REQUEST):
+                provider = await store.pick_provider(skip)
+                if provider is None:
+                    break
+                try:
+                    data = await call_provider(
+                        http, provider, system, prompt, timeout=timeout, max_tokens=max_tokens
+                    )
+                    result = check(data) if check else data
+                except ProviderError as error:
+                    log.warning("provider %s failed: %s", provider.name, error)
+                    _had_error.add(provider.id)
+                    await store.report_provider_error(provider.id, str(error))
+                    skip.append(provider.id)
+                    continue
+                if provider.id in _had_error:
+                    # It works again: clear the problem shown on the admin site.
+                    _had_error.discard(provider.id)
+                    await store.report_provider_error(provider.id, "")
+                return result
+    except TimeoutError:
+        raise NoProviderError("The AI took too long") from None
     raise NoProviderError("No AI provider is available" if not skip else "Every AI provider failed")

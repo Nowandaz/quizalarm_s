@@ -81,7 +81,40 @@
     }
   }
 
+  const ago = (minutes) => new Date(now - minutes * 6e4).toISOString();
+  const alarmReports = [
+    { id: 1, at: ago(95), user_id: 'u3', email: 'brian@example.com', alarm_id: 482913, device: 'Tecno Camon 30 (Android 14)', app_version: '1.0.0+1', resolved: false,
+      detail: { rang: false, problem: 'never_rang', note: 'Woke up by myself at 8, the 6:30 alarm never came.',
+        diagnostics: { app_version: '1.0.0+1', scheduled: ago(185), last_actual_ring: ago(1625), reported_at: ago(95),
+          device: { manufacturer: 'Tecno', model: 'Camon 30', android: '14', sdk: 34 },
+          alarm: { id: 482913, time: '06:30', days: [1, 2, 3, 4, 5], enabled: true, snooze_minutes: 5, custom_ringtone: false, registered_with_phone: { tue: ago(-1255), wed: ago(-2695) } },
+          snoozed_recently: false, edited_recently: true, switched_recently: false, alarm_service_ringing_now: false,
+          permissions: { battery_unrestricted: false, notifications: true, exact_alarms: true, full_screen: true, over_other_apps: false },
+          force_stopped: true, app_exits: [{ reason: 10, at: now - 9 * 36e5, description: 'stop com.example.quiz_alarm due to from pid 2231' }] } } },
+    { id: 2, at: ago(600), user_id: 'u2', email: 'amina@example.com', alarm_id: 771204, device: 'Samsung SM-A155F (Android 15)', app_version: '1.0.0+1', resolved: false,
+      detail: { rang: false, problem: 'no_sound', note: '', diagnostics: { app_version: '1.0.0+1', scheduled: ago(640), last_actual_ring: ago(640), reported_at: ago(600),
+        device: { manufacturer: 'Samsung', model: 'SM-A155F', android: '15', sdk: 35 }, alarm: { id: 771204, time: '05:00', days: [], enabled: false, snooze_minutes: 10, custom_ringtone: true, registered_with_phone: {} },
+        snoozed_recently: true, edited_recently: false, switched_recently: false, alarm_service_ringing_now: false,
+        permissions: { battery_unrestricted: true, notifications: true, exact_alarms: true, full_screen: true, over_other_apps: true }, force_stopped: false, app_exits: [] } } },
+    { id: 3, at: ago(2000), user_id: 'u4', email: 'chao@example.com', alarm_id: 120044, device: 'Xiaomi Redmi Note 13 (Android 14)', app_version: '1.0.0+1', resolved: true,
+      detail: { rang: true, scheduled: ago(2060), note: 'The app thought this ring was missed; the user says it rang.' } },
+  ];
+  const diary = [
+    { id: 9, at: ago(95), alarm_id: 482913, type: 'report', detail: {} },
+    { id: 8, at: ago(100), alarm_id: 482913, type: 'missed', detail: { scheduled: ago(185), noticed_after_minutes: 85 } },
+    { id: 7, at: ago(700), alarm_id: 482913, type: 'edited', detail: { time: '06:30', streak: 5 } },
+    { id: 6, at: ago(705), alarm_id: 482913, type: 'scheduled', detail: { for: ago(185) } },
+    { id: 5, at: ago(1620), alarm_id: 482913, type: 'dismissed', detail: {} },
+    { id: 4, at: ago(1625), alarm_id: 482913, type: 'rang', detail: { late_seconds: 3 } },
+  ];
+
   const rpcs = {
+    admin_alarm_health: () => ({ rang: 412, missed: 9, reports: 2, open_reports: alarmReports.filter((r) => !r.resolved && !r.detail.rang).length, false_alarms: 1, late_over_a_minute: 6, phones_reporting: 38,
+      missed_by_device: [{ device: 'Tecno Camon 30 (Android 14)', missed: 5, users: 3 }, { device: 'Xiaomi Redmi Note 13 (Android 14)', missed: 3, users: 2 }, { device: 'Samsung SM-A155F (Android 15)', missed: 1, users: 1 }],
+      problems: [{ problem: 'never_rang', reports: 1 }, { problem: 'no_sound', reports: 1 }] }),
+    admin_alarm_reports: ({ only_open }) => alarmReports.filter((r) => !only_open || !r.resolved).map((r) => ({ ...r })),
+    admin_alarm_events: () => diary,
+    admin_resolve_alarm_report: ({ report_id, is_resolved }) => { alarmReports.find((r) => r.id === report_id).resolved = is_resolved; },
     owner_exists: () => true,
     admin_stats: () => {
       const live = tables.questions.filter((x) => !x.deleted_at);
