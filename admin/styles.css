@@ -186,3 +186,7 @@ tr:last-child td { border-bottom: 0; }
 .spark { display: flex; align-items: flex-end; gap: 2px; height: 72px; margin: 12px 0 6px; }
 .spark i { flex: 1; min-width: 2px; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .85; }
 tr.click { cursor: pointer; }
+
+/* The logo beside the name. */
+.brand { display: flex; align-items: center; gap: 9px; }
+.brand img { border-radius: 8px; flex: none; }

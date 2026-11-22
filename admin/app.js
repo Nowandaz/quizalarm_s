@@ -310,7 +310,7 @@ function renderShell() {
     CONFIG.demo && h('div', { class: 'demo-banner' }, 'Preview with made-up data. Nothing here is saved.'),
     h('div', { class: 'shell' },
       h('div', { class: 'side' },
-        h('div', { class: 'brand' }, CONFIG.appName),
+        h('div', { class: 'brand' }, h('img', { src: 'brand/logo.png', alt: '', width: 30, height: 30 }), CONFIG.appName),
         h('div', { class: 'brand-sub' }, 'Admin'),
         link('dashboard', 'Dashboard', 'home'),
         link('stats', 'Statistics', 'chart'),

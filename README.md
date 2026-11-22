@@ -1,6 +1,6 @@
-# BrainWake server (quizalarm_s)
+# Brain O' Clock server (quizalarm_s)
 
-Everything behind the BrainWake app ([quiz_alarm](https://github.com/Nowandaz/quiz_alarm)):
+Everything behind the Brain O' Clock app ([quiz_alarm](https://github.com/Nowandaz/quiz_alarm)):
 the database design, and (coming next) the admin website and the small API
 that makes AI calls.
 

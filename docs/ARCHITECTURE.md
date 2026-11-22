@@ -1,4 +1,4 @@
-# BrainWake architecture
+# Brain O' Clock architecture
 
 ## The pieces
 
@@ -11,7 +11,7 @@
       │ "write questions",           │ service key
       │ "explain my answer"          │ (server only)
       ▼                              │
-  BrainWake API  ────────────────────┘
+  Brain O' Clock API  ────────────────────┘
   (Azure VM)      checks who is asking, enforces the daily AI limit,
       │           picks the next AI provider in turn (keys only the server
       │           can read) and falls through to another if one fails
@@ -99,7 +99,7 @@ Payments are described in [PAYMENTS.md](PAYMENTS.md).
 
 ## Naming
 
-"BrainWake" is a working name. Nothing in the database carries it: tables,
+"Brain O' Clock" is a working name. Nothing in the database carries it: tables,
 the storage bucket and policies have neutral names, so renaming the product
 needs no database change.
 

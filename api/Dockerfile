@@ -1,4 +1,4 @@
-# The BrainWake API as a small container. Build and run with docker compose
+# The Brain O' Clock API as a small container. Build and run with docker compose
 # (see docker-compose.yml); settings come from .env, never from the image.
 FROM python:3.12-slim
 

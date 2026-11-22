@@ -197,5 +197,5 @@
   };
 
   window.supabase = { createClient: () => client };
-  window.BRAINWAKE_CONFIG = { appName: 'BrainWake', supabaseUrl: '', supabaseKey: '', imageBucket: '', demo: true };
+  window.BRAINWAKE_CONFIG = { appName: "Brain O' Clock", supabaseUrl: '', supabaseKey: '', imageBucket: '', demo: true };
 })();
