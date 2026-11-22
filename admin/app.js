@@ -57,6 +57,7 @@ const ICONS = {
   alarm: 'M12 21a8 8 0 100-16 8 8 0 000 16M12 9v4l2.5 2M5 3L2 6M19 3l3 3',
   card: 'M3 6h18v12H3zM3 10h18M7 15h4',
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  chart: 'M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3',
   lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3',
 };
 function icon(name) {
@@ -312,6 +313,7 @@ function renderShell() {
         h('div', { class: 'brand' }, CONFIG.appName),
         h('div', { class: 'brand-sub' }, 'Admin'),
         link('dashboard', 'Dashboard', 'home'),
+        link('stats', 'Statistics', 'chart'),
         link('bank', 'Question bank', 'book'),
         link('flags', 'Flagged questions', 'flag'),
         link('alarms', 'Alarm reports', 'alarm'),
@@ -328,6 +330,7 @@ function renderShell() {
   const pages = {
     dashboard: () => pageDashboard(main),
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
+    stats: () => pageStats(main),
     flags: () => pageFlags(main),
     alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
@@ -874,6 +877,90 @@ async function pageAlarms(main) {
     h('div', { class: 'section' }, h('h2', {}, 'Reports'), chips, list));
   await drawHealth();
   await drawList();
+}
+
+// --------------------------------------------------------------- statistics
+
+async function pageStats(main) {
+  let days = 30;
+  const body = h('div', {});
+  const chips = h('div', { class: 'chips' });
+  const pct = (part, whole) => (whole > 0 ? `${Math.round(100 * part / whole)}%` : '-');
+  const card = (iconName, value, label, note) => h('div', { class: 'card stat' },
+    h('div', { class: 'ic' }, icon(iconName)),
+    h('div', {}, h('b', {}, value ?? 0), h('span', {}, label), note && h('span', { class: 'muted small', style: 'display:block' }, note)));
+  // A row of thin bars, one per day.
+  const spark = (rows, key, title) => {
+    const most = Math.max(1, ...rows.map((r) => r[key]));
+    const total = rows.reduce((n, r) => n + r[key], 0);
+    return h('div', { class: 'card' },
+      h('div', { class: 'row spread' }, h('h3', {}, title), h('b', {}, total)),
+      h('div', { class: 'spark' }, rows.map((r) => h('i', { style: `height:${Math.max(2, Math.round(100 * r[key] / most))}%`, title: `${r.day}: ${r[key]}` }))),
+      h('div', { class: 'row spread muted small' }, h('span', {}, rows[0] ? rows[0].day : ''), h('span', {}, rows.length ? rows[rows.length - 1].day : '')));
+  };
+  const split = (title, parts) => {
+    const whole = parts.reduce((n, [, v]) => n + v, 0);
+    return h('div', { class: 'card' }, h('h3', {}, title),
+      parts.map(([label, value]) => h('div', { style: 'margin-top:10px' },
+        h('div', { class: 'row spread small' }, h('span', {}, label), h('span', {}, h('b', {}, value), ' ', h('span', { class: 'muted' }, pct(value, whole)))),
+        h('div', { class: 'bar', style: 'margin-top:4px' }, h('i', { style: `width:${whole > 0 ? Math.round(100 * value / whole) : 0}%` })))));
+  };
+
+  const draw = async () => {
+    fill(chips, [7, 30, 90].map((d) => h('button', { class: d === days ? 'chip on' : 'chip', onclick: () => { days = d; attempt(draw); } }, `Last ${d} days`)));
+    const x = ok(await db.rpc('admin_usage_stats', { days }));
+    const p = x.phones; const a = x.accounts; const q = x.questions; const al = x.alarms;
+    const level = (name) => p.by_level[name] || 0;
+    const ended = al.answered + al.timed_out + al.never_rang;
+    fill(body,
+      h('div', { class: 'section' }, h('h2', {}, 'Phones with the app'),
+        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Counted from a small anonymous "I am here" message each phone sends about once a day. Phones on older versions of the app are not counted.'),
+        h('div', { class: 'grid' },
+          card('users', p.active, `Active, last ${x.days} days`), card('gauge', p.active_7d, 'Active, last 7 days'),
+          card('plus', p.new, `New, last ${x.days} days`), card('layers', p.total, 'Ever seen'),
+          card('alarm', p.alarms_set, 'Alarms set up on active phones')),
+        h('div', { class: 'grid wide', style: 'margin-top:12px' },
+          split(`Active phones by plan`, [['No account', level('guest')], ['Free account', level('free')], ['Pro', level('pro')], ['Ultra', level('ultra')]]),
+          split('Accounts by plan (all accounts)', [['Free', a.free], ['Pro', a.pro], ['Ultra', a.ultra], ['Premium given by hand', a.by_hand]]),
+          h('div', { class: 'card' }, h('h3', {}, 'App versions in use'),
+            h('table', {}, h('tbody', {}, p.by_version.map((v) => h('tr', {}, h('td', {}, v.version || 'unknown'), h('td', {}, `${v.phones} phone${v.phones === 1 ? '' : 's'}`)))),
+            p.by_version.length === 0 && h('p', { class: 'muted small' }, 'No phone has reported yet.'))))),
+
+      h('div', { class: 'section' }, h('h2', {}, 'Growth'),
+        h('div', { class: 'grid wide' }, spark(x.by_day, 'new_phones', 'New phones'), spark(x.by_day, 'new_accounts', 'New accounts'))),
+
+      h('div', { class: 'section' }, h('h2', {}, 'Question bank use'),
+        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'From the answers of people with an account (their history syncs). The last card adds what phones report in total, guests included.'),
+        h('div', { class: 'grid' },
+          card('check', q.answered, `Questions answered, last ${x.days} days`), card('gauge', pct(q.correct, q.answered), 'Answered correctly'),
+          card('users', q.learners, 'People who answered'), card('alarm', q.in_alarms, 'Answered to stop an alarm'),
+          card('layers', q.answered_all_time, 'Answered, all time (accounts)'),
+          card('book', p.answered, 'Answered on all phones, all time', `${pct(p.correct, p.answered)} correct · ${p.sharing} phones share figures`)),
+        h('div', { class: 'grid wide', style: 'margin-top:12px' },
+          spark(x.by_day, 'answers', 'Answers per day')),
+        h('div', { class: 'card', style: 'margin-top:12px' }, h('h3', {}, 'Most used topics'),
+            h('table', {}, h('tbody', {}, q.by_topic.map((t) => h('tr', {}, h('td', {}, t.topic), h('td', {}, `${t.answered} answers`), h('td', { class: 'muted' }, `${pct(t.correct, t.answered)} correct`), h('td', { class: 'muted' }, `${t.learners} ${t.learners === 1 ? 'person' : 'people'}`))))),
+            q.by_topic.length === 0 && h('p', { class: 'muted small' }, 'No answers in this period.')),
+        h('div', { class: 'card', style: 'margin-top:12px' }, h('h3', {}, 'Hardest questions'),
+          h('p', { class: 'muted small' }, 'Answered at least 5 times, lowest share correct first. A very low share can also mean the answer in the bank is wrong.'),
+          h('table', {}, h('tbody', {}, q.hardest.map((t) => h('tr', { class: 'click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(t.unit_id)}/${encodeURIComponent(t.topic_id)}`; } },
+            h('td', {}, t.text), h('td', { class: 'muted small' }, t.topic), h('td', {}, h('b', {}, `${t.rate}%`)), h('td', { class: 'muted small' }, `${t.answered} answers`))))),
+          q.hardest.length === 0 && h('p', { class: 'muted small' }, 'Not enough answers yet.'))),
+
+      h('div', { class: 'section' }, h('h2', {}, 'Alarms'),
+        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'From the alarm diaries of people with an account who share diagnostics.'),
+        h('div', { class: 'grid' },
+          card('alarm', al.rang, 'Alarms rang'), card('check', al.answered, 'Stopped by answering'),
+          card('gauge', pct(al.answered, ended), 'Successful alarms'),
+          card('alarm', al.snoozed, 'Snoozes'), card('edit', al.timed_out, 'Rang unanswered until they stopped'),
+          card('flag', al.never_rang, 'Never rang (noticed by the app)'), card('users', al.people, 'People whose alarms rang'),
+          card('book', p.alarms_ok, 'Stopped by answering, all phones, all time', `${p.alarms_missed} missed`)),
+        h('div', { class: 'grid wide', style: 'margin-top:12px' },
+          spark(x.by_day, 'alarms_answered', 'Alarms answered per day'), spark(x.by_day, 'alarms_missed', 'Alarms missed per day'))));
+  };
+
+  fill(main, pageHead('Statistics', 'Who has the app, how the question bank is used and how alarms go.', chips), body);
+  await draw();
 }
 
 // -------------------------------------------------------- flagged questions

@@ -134,6 +134,18 @@
   ];
 
   const rpcs = {
+    admin_usage_stats: ({ days: n }) => {
+      const wave = (i, base, swing) => Math.max(0, Math.round(base + swing * Math.sin(i / 2.3) + (i % 7 === 0 ? swing : 0)));
+      const by_day = Array.from({ length: n + 1 }, (_, i) => ({ day: days(n - i).slice(0, 10), answers: wave(i, 260, 90), alarms_answered: wave(i, 58, 14), alarms_missed: wave(i, 5, 3), new_accounts: wave(i, 3, 2), new_phones: wave(i, 6, 3) }));
+      return { days: n,
+        phones: { total: 214, active: 163, active_7d: 121, new: 58, by_level: { guest: 71, free: 64, pro: 22, ultra: 6 }, by_version: [{ version: '1.1.0+3', phones: 131 }, { version: '1.0.0+1', phones: 32 }], sharing: 118, answered: 48210, correct: 33120, alarms_ok: 3890, alarms_missed: 312, alarms_set: 402 },
+        accounts: { total: 139, new: 41, free: 104, pro: 27, ultra: 6, by_hand: 2 },
+        questions: { in_bank: 412, answered_all_time: 31877, answered: by_day.reduce((t, d) => t + d.answers, 0), correct: Math.round(by_day.reduce((t, d) => t + d.answers, 0) * 0.68), learners: 88, in_alarms: Math.round(by_day.reduce((t, d) => t + d.answers, 0) * 0.41),
+          by_topic: [{ topic: 'Pharmacology / Cardiovascular drugs', answered: 1820, correct: 1201, learners: 61 }, { topic: 'Pharmacology / Autonomic nervous system', answered: 1340, correct: 991, learners: 48 }, { topic: 'Pathology / Spotters', answered: 720, correct: 402, learners: 19 }, { topic: "People's own questions", answered: 310, correct: 240, learners: 12 }],
+          hardest: [{ id: 'q1', text: 'Which of these is a non-selective beta blocker?', topic: 'Cardiovascular drugs', topic_id: 'pharmacology-cvs', unit_id: 'pharmacology', answered: 64, correct: 14, rate: 22 }, { id: 'q2', text: 'Name the cell shown.', topic: 'Spotters', topic_id: 'pathology-spotters', unit_id: 'pathology', answered: 31, correct: 10, rate: 32 }] },
+        alarms: { rang: by_day.reduce((t, d) => t + d.alarms_answered + d.alarms_missed, 0), answered: by_day.reduce((t, d) => t + d.alarms_answered, 0), snoozed: 211, never_rang: 9, timed_out: by_day.reduce((t, d) => t + d.alarms_missed, 0) - 9, people: 74 },
+        by_day };
+    },
     admin_list_flags: ({ only_open }) => flags.filter((f) => !only_open || f.status === 'open').map((f) => ({ ...f })),
     admin_resolve_flag: ({ flag, resolved }) => { flags.find((f) => f.id === flag).status = resolved ? 'resolved' : 'open'; return 1; },
     admin_list_payments: () => payRows,
