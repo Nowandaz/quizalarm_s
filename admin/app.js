@@ -56,6 +56,9 @@ const ICONS = {
   gauge: 'M4 18a8 8 0 1116 0M12 18l4-6',
   alarm: 'M12 21a8 8 0 100-16 8 8 0 000 16M12 9v4l2.5 2M5 3L2 6M19 3l3 3',
   card: 'M3 6h18v12H3zM3 10h18M7 15h4',
+  flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  chart: 'M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3',
+  lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3',
 };
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -310,7 +313,9 @@ function renderShell() {
         h('div', { class: 'brand' }, CONFIG.appName),
         h('div', { class: 'brand-sub' }, 'Admin'),
         link('dashboard', 'Dashboard', 'home'),
+        link('stats', 'Statistics', 'chart'),
         link('bank', 'Question bank', 'book'),
+        link('flags', 'Flagged questions', 'flag'),
         link('alarms', 'Alarm reports', 'alarm'),
         isOwner() && link('users', 'Accounts', 'users'),
         isOwner() && link('payments', 'Payments', 'card'),
@@ -325,6 +330,8 @@ function renderShell() {
   const pages = {
     dashboard: () => pageDashboard(main),
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
+    stats: () => pageStats(main),
+    flags: () => pageFlags(main),
     alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
     payments: () => (isOwner() ? pagePayments(main) : pageDashboard(main)),
@@ -395,7 +402,6 @@ async function pageBank(main) {
           h('h3', {}, u.name),
           h('div', { class: 'row' },
             u.deleted_at && h('span', { class: 'pill bad' }, 'Deleted'),
-            u.premium ? h('span', { class: 'pill accent' }, 'Premium') : h('span', { class: 'pill' }, 'Free'),
             h('button', { class: 'icon-btn', title: 'Edit unit', onclick: (e) => { e.stopPropagation(); unitDialog(u); } }, icon('edit')))),
         h('p', { class: 'muted small', style: 'min-height:20px;margin:6px 0 12px' }, u.description || 'No description.'),
         h('div', { class: 'row small' },
@@ -410,14 +416,12 @@ function unitDialog(unit, nextOrder = 0) {
   const name = h('input', { type: 'text', value: unit ? unit.name : '' });
   const description = h('textarea', {}, unit ? unit.description : '');
   const order = h('input', { type: 'number', value: unit ? unit.sort_order : nextOrder });
-  const premium = h('input', { type: 'checkbox', checked: unit && unit.premium });
   dialog((close) => [
     h('h2', {}, unit ? 'Edit unit' : 'Add unit'),
     field('Name', name),
     field('Description', description),
     field('Order', order, 'Lower numbers come first in the app.'),
-    h('label', { class: 'check' }, premium, 'Premium unit'),
-    h('p', { class: 'muted small' }, 'Everyone sees that a premium unit exists, but only signed-in users with a premium plan get its questions.'),
+    h('p', { class: 'muted small' }, 'Who can use the questions is set on each topic.'),
     h('div', { class: 'row' },
       unit && (unit.deleted_at
         ? h('button', { onclick: async () => { await attempt(async () => ok(await db.from('units').update({ deleted_at: null }).eq('id', unit.id)), 'Unit restored'); close(); render(); } }, 'Restore')
@@ -425,7 +429,7 @@ function unitDialog(unit, nextOrder = 0) {
       h('button', { class: 'right', onclick: close }, 'Cancel'),
       h('button', { class: 'primary', onclick: async () => {
         if (!name.value.trim()) { toast('Give the unit a name', true); return; }
-        const row = { name: name.value.trim(), description: description.value.trim(), sort_order: Number(order.value) || 0, premium: premium.checked };
+        const row = { name: name.value.trim(), description: description.value.trim(), sort_order: Number(order.value) || 0 };
         const saved = await attempt(async () => {
           if (unit) return ok(await db.from('units').update(row).eq('id', unit.id).select());
           return ok(await db.from('units').insert({ id: await freeId('units', slug(row.name)), ...row }).select());
@@ -452,7 +456,7 @@ async function pageUnit(main, unitId) {
 
   fill(main, 
     h('div', { class: 'crumbs' }, h('a', { href: '#/bank' }, 'Question bank'), ' / ', unit.name),
-    pageHead([unit.name, unit.premium && h('span', { class: 'pill accent', style: 'margin-left:10px;vertical-align:middle' }, 'Premium')],
+    pageHead(unit.name,
       unit.description || 'No description.',
       h('button', { onclick: () => exportUnit(unit) }, icon('download'), 'Export'),
       h('button', { onclick: () => unitDialog(unit) }, icon('edit'), 'Edit unit'),
@@ -465,6 +469,7 @@ async function pageUnit(main, unitId) {
         h('div', { class: 'row spread' },
           h('h3', {}, t.name, t.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted')),
           h('div', { class: 'row small' },
+            accessPill(t.access),
             h('span', {}, h('b', {}, qs.length), ' questions'),
             drafts > 0 && h('span', { class: 'pill' }, `${drafts} draft${drafts === 1 ? '' : 's'}`),
             qs.some((q) => q.image_path) && h('span', { class: 'pill accent' }, 'Pictures'),
@@ -473,13 +478,28 @@ async function pageUnit(main, unitId) {
     })));
 }
 
+// Who gets a topic's questions. The names of all topics show to everyone
+// (the locked ones with a padlock in the app).
+const ACCESS = {
+  guest: ['Starter', 'Everyone, even without an account'],
+  free: ['Free', 'Anyone with a free account'],
+  paid: ['Paid', 'Paid plans only'],
+};
+function accessPill(access) {
+  const [label] = ACCESS[access] || ACCESS.paid;
+  return h('span', { class: access === 'paid' || !ACCESS[access] ? 'pill accent' : 'pill ok', title: (ACCESS[access] || ACCESS.paid)[1] }, label);
+}
+
 function topicDialog(unit, topic, nextOrder = 0) {
   const name = h('input', { type: 'text', value: topic ? topic.name : '' });
   const order = h('input', { type: 'number', value: topic ? topic.sort_order : nextOrder });
+  const current = (topic && topic.access) || 'paid';
+  const access = h('select', {}, Object.entries(ACCESS).map(([value, [, text]]) => h('option', { value, selected: value === current }, text)));
   dialog((close) => [
     h('h2', {}, topic ? 'Edit topic' : `Add a topic to ${unit.name}`),
     field('Name', name),
     field('Order', order),
+    field('Who can use it', access, 'Without a paid plan, people get only the first 10 questions of a topic that is open to them. Paid plans get every question of every topic.'),
     h('div', { class: 'row' },
       topic && (topic.deleted_at
         ? h('button', { onclick: async () => { await attempt(async () => ok(await db.from('topics').update({ deleted_at: null }).eq('id', topic.id)), 'Topic restored'); close(); render(); } }, 'Restore')
@@ -487,7 +507,7 @@ function topicDialog(unit, topic, nextOrder = 0) {
       h('button', { class: 'right', onclick: close }, 'Cancel'),
       h('button', { class: 'primary', onclick: async () => {
         if (!name.value.trim()) { toast('Give the topic a name', true); return; }
-        const row = { name: name.value.trim(), sort_order: Number(order.value) || 0 };
+        const row = { name: name.value.trim(), sort_order: Number(order.value) || 0, access: access.value };
         const saved = await attempt(async () => {
           if (topic) return ok(await db.from('topics').update(row).eq('id', topic.id).select());
           return ok(await db.from('topics').insert({ id: await freeId('topics', `${unit.id}-${slug(row.name)}`), unit_id: unit.id, ...row }).select());
@@ -859,6 +879,143 @@ async function pageAlarms(main) {
   await drawList();
 }
 
+// --------------------------------------------------------------- statistics
+
+async function pageStats(main) {
+  let days = 30;
+  const body = h('div', {});
+  const chips = h('div', { class: 'chips' });
+  const pct = (part, whole) => (whole > 0 ? `${Math.round(100 * part / whole)}%` : '-');
+  const card = (iconName, value, label, note) => h('div', { class: 'card stat' },
+    h('div', { class: 'ic' }, icon(iconName)),
+    h('div', {}, h('b', {}, value ?? 0), h('span', {}, label), note && h('span', { class: 'muted small', style: 'display:block' }, note)));
+  // A row of thin bars, one per day.
+  const spark = (rows, key, title) => {
+    const most = Math.max(1, ...rows.map((r) => r[key]));
+    const total = rows.reduce((n, r) => n + r[key], 0);
+    return h('div', { class: 'card' },
+      h('div', { class: 'row spread' }, h('h3', {}, title), h('b', {}, total)),
+      h('div', { class: 'spark' }, rows.map((r) => h('i', { style: `height:${Math.max(2, Math.round(100 * r[key] / most))}%`, title: `${r.day}: ${r[key]}` }))),
+      h('div', { class: 'row spread muted small' }, h('span', {}, rows[0] ? rows[0].day : ''), h('span', {}, rows.length ? rows[rows.length - 1].day : '')));
+  };
+  const split = (title, parts) => {
+    const whole = parts.reduce((n, [, v]) => n + v, 0);
+    return h('div', { class: 'card' }, h('h3', {}, title),
+      parts.map(([label, value]) => h('div', { style: 'margin-top:10px' },
+        h('div', { class: 'row spread small' }, h('span', {}, label), h('span', {}, h('b', {}, value), ' ', h('span', { class: 'muted' }, pct(value, whole)))),
+        h('div', { class: 'bar', style: 'margin-top:4px' }, h('i', { style: `width:${whole > 0 ? Math.round(100 * value / whole) : 0}%` })))));
+  };
+
+  const draw = async () => {
+    fill(chips, [7, 30, 90].map((d) => h('button', { class: d === days ? 'chip on' : 'chip', onclick: () => { days = d; attempt(draw); } }, `Last ${d} days`)));
+    const x = ok(await db.rpc('admin_usage_stats', { days }));
+    const p = x.phones; const a = x.accounts; const q = x.questions; const al = x.alarms;
+    const level = (name) => p.by_level[name] || 0;
+    const ended = al.answered + al.timed_out + al.never_rang;
+    fill(body,
+      h('div', { class: 'section' }, h('h2', {}, 'Phones with the app'),
+        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Counted from a small anonymous "I am here" message each phone sends about once a day. Phones on older versions of the app are not counted.'),
+        h('div', { class: 'grid' },
+          card('users', p.active, `Active, last ${x.days} days`), card('gauge', p.active_7d, 'Active, last 7 days'),
+          card('plus', p.new, `New, last ${x.days} days`), card('layers', p.total, 'Ever seen'),
+          card('alarm', p.alarms_set, 'Alarms set up on active phones')),
+        h('div', { class: 'grid wide', style: 'margin-top:12px' },
+          split(`Active phones by plan`, [['No account', level('guest')], ['Free account', level('free')], ['Pro', level('pro')], ['Ultra', level('ultra')]]),
+          split('Accounts by plan (all accounts)', [['Free', a.free], ['Pro', a.pro], ['Ultra', a.ultra], ['Premium given by hand', a.by_hand]]),
+          h('div', { class: 'card' }, h('h3', {}, 'App versions in use'),
+            h('table', {}, h('tbody', {}, p.by_version.map((v) => h('tr', {}, h('td', {}, v.version || 'unknown'), h('td', {}, `${v.phones} phone${v.phones === 1 ? '' : 's'}`)))),
+            p.by_version.length === 0 && h('p', { class: 'muted small' }, 'No phone has reported yet.'))))),
+
+      h('div', { class: 'section' }, h('h2', {}, 'Growth'),
+        h('div', { class: 'grid wide' }, spark(x.by_day, 'new_phones', 'New phones'), spark(x.by_day, 'new_accounts', 'New accounts'))),
+
+      h('div', { class: 'section' }, h('h2', {}, 'Question bank use'),
+        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'From the answers of people with an account (their history syncs). The last card adds what phones report in total, guests included.'),
+        h('div', { class: 'grid' },
+          card('check', q.answered, `Questions answered, last ${x.days} days`), card('gauge', pct(q.correct, q.answered), 'Answered correctly'),
+          card('users', q.learners, 'People who answered'), card('alarm', q.in_alarms, 'Answered to stop an alarm'),
+          card('layers', q.answered_all_time, 'Answered, all time (accounts)'),
+          card('book', p.answered, 'Answered on all phones, all time', `${pct(p.correct, p.answered)} correct · ${p.sharing} phones share figures`)),
+        h('div', { class: 'grid wide', style: 'margin-top:12px' },
+          spark(x.by_day, 'answers', 'Answers per day')),
+        h('div', { class: 'card', style: 'margin-top:12px' }, h('h3', {}, 'Most used topics'),
+            h('table', {}, h('tbody', {}, q.by_topic.map((t) => h('tr', {}, h('td', {}, t.topic), h('td', {}, `${t.answered} answers`), h('td', { class: 'muted' }, `${pct(t.correct, t.answered)} correct`), h('td', { class: 'muted' }, `${t.learners} ${t.learners === 1 ? 'person' : 'people'}`))))),
+            q.by_topic.length === 0 && h('p', { class: 'muted small' }, 'No answers in this period.')),
+        h('div', { class: 'card', style: 'margin-top:12px' }, h('h3', {}, 'Hardest questions'),
+          h('p', { class: 'muted small' }, 'Answered at least 5 times, lowest share correct first. A very low share can also mean the answer in the bank is wrong.'),
+          h('table', {}, h('tbody', {}, q.hardest.map((t) => h('tr', { class: 'click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(t.unit_id)}/${encodeURIComponent(t.topic_id)}`; } },
+            h('td', {}, t.text), h('td', { class: 'muted small' }, t.topic), h('td', {}, h('b', {}, `${t.rate}%`)), h('td', { class: 'muted small' }, `${t.answered} answers`))))),
+          q.hardest.length === 0 && h('p', { class: 'muted small' }, 'Not enough answers yet.'))),
+
+      h('div', { class: 'section' }, h('h2', {}, 'Alarms'),
+        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'From the alarm diaries of people with an account who share diagnostics.'),
+        h('div', { class: 'grid' },
+          card('alarm', al.rang, 'Alarms rang'), card('check', al.answered, 'Stopped by answering'),
+          card('gauge', pct(al.answered, ended), 'Successful alarms'),
+          card('alarm', al.snoozed, 'Snoozes'), card('edit', al.timed_out, 'Rang unanswered until they stopped'),
+          card('flag', al.never_rang, 'Never rang (noticed by the app)'), card('users', al.people, 'People whose alarms rang'),
+          card('book', p.alarms_ok, 'Stopped by answering, all phones, all time', `${p.alarms_missed} missed`)),
+        h('div', { class: 'grid wide', style: 'margin-top:12px' },
+          spark(x.by_day, 'alarms_answered', 'Alarms answered per day'), spark(x.by_day, 'alarms_missed', 'Alarms missed per day'))));
+  };
+
+  fill(main, pageHead('Statistics', 'Who has the app, how the question bank is used and how alarms go.', chips), body);
+  await draw();
+}
+
+// -------------------------------------------------------- flagged questions
+
+const FLAG_REASONS = {
+  wrong_answer: 'The answer is wrong',
+  unclear: 'The question is unclear',
+  typo: 'Spelling or typo',
+  picture: 'Picture is wrong or missing',
+  other: 'Something else',
+};
+
+async function pageFlags(main) {
+  let onlyOpen = true;
+  const list = h('div', { class: 'list' });
+  const chips = h('div', { class: 'chips', style: 'margin-bottom:12px' });
+
+  const draw = async () => {
+    fill(chips,
+      h('button', { class: onlyOpen ? 'chip on' : 'chip', onclick: () => { onlyOpen = true; attempt(draw); } }, 'To look at'),
+      h('button', { class: !onlyOpen ? 'chip on' : 'chip', onclick: () => { onlyOpen = false; attempt(draw); } }, 'All flags'));
+    const flags = ok(await db.rpc('admin_list_flags', { only_open: onlyOpen, max_rows: 200 }));
+    fill(list, flags.map((f) => {
+      const changed = f.in_bank && f.current_text && f.question_text && f.current_text.trim() !== f.question_text.trim();
+      const resolve = async (whole) => {
+        await attempt(async () => ok(await db.rpc('admin_resolve_flag', { flag: f.id, resolved: f.status === 'open', whole_question: whole })),
+          f.status === 'open' ? 'Marked as dealt with' : 'Reopened');
+        attempt(draw);
+      };
+      return h('div', { class: f.status === 'open' ? 'card' : 'card gone' },
+        h('div', { class: 'row' },
+          h('div', { class: 'grow' },
+            h('div', { class: 'row' },
+              h('h3', {}, FLAG_REASONS[f.reason] || f.reason),
+              f.others > 0 && h('span', { class: 'pill bad' }, `+${f.others} more on this question`),
+              f.status !== 'open' && h('span', { class: 'pill ok' }, 'Dealt with'),
+              !f.in_bank && h('span', { class: 'pill' }, 'Not in the bank (the user\'s own, or deleted)')),
+            h('div', { class: 'muted small', style: 'margin-top:4px' },
+              `${f.email || 'deleted account'} · ${when(f.created_at)}`, f.in_bank && ` · ${f.unit} / ${f.topic}`)),
+          f.in_bank && h('button', { onclick: () => { location.hash = `#/bank/${encodeURIComponent(f.unit_id)}/${encodeURIComponent(f.topic_id)}`; } }, icon('edit'), 'Open topic'),
+          f.status === 'open' && f.others > 0 && h('button', { onclick: () => resolve(true) }, 'Dealt with (all on this question)'),
+          h('button', { class: f.status === 'open' ? 'primary' : '', onclick: () => resolve(false) }, f.status === 'open' ? 'Dealt with' : 'Reopen')),
+        h('p', { style: 'margin:12px 0 4px' }, f.question_text || f.current_text || '(no question text was sent)'),
+        f.in_bank && h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Answer in the bank: '), f.current_answer),
+        changed && h('div', { class: 'small muted', style: 'margin-top:4px' }, 'The question has been edited since: ', f.current_text),
+        f.note && h('div', { class: 'small', style: 'margin-top:8px' }, h('span', { class: 'muted' }, 'Their note: '), f.note));
+    }), flags.length === 0 && h('div', { class: 'card center muted' }, onlyOpen ? 'No flagged questions waiting.' : 'No question has been flagged yet.'));
+  };
+
+  fill(main,
+    pageHead('Flagged questions', 'Questions people marked for review from their history in the app.'),
+    chips, list);
+  await draw();
+}
+
 // ----------------------------------------------------------------- accounts
 
 async function pageUsers(main) {
@@ -1190,7 +1347,7 @@ async function settingsPlans(body) {
         h('div', { class: 'row small', style: 'margin-bottom:8px' },
           h('span', {}, h('b', {}, price(t.price_month)), ' a month'), h('span', {}, h('b', {}, price(t.price_year)), ' a year')),
         h('ul', { class: 'small', style: 'margin:0;padding-left:18px' }, (t.features || []).map((f) => h('li', {}, f))),
-        !t.premium_units && h('div', { class: 'muted small', style: 'margin-top:8px' }, 'Does not open premium units.'))))),
+        !t.premium_units && h('div', { class: 'muted small', style: 'margin-top:8px' }, 'Does not open the paid topics.'))))),
     h('div', { class: 'section' },
       h('div', { class: 'row spread', style: 'margin-bottom:12px' },
         h('div', {}, h('h2', { style: 'margin:0' }, 'Discount codes'),
@@ -1239,7 +1396,7 @@ function tierDialog(tier, nextOrder = 0) {
     h('div', { class: 'row' },
       h('div', { class: 'grow' }, field('AI requests a day', ai)),
       h('div', { class: 'grow' }, field('Order', order, 'Lower comes first.'))),
-    h('label', { class: 'check' }, units, 'Opens the premium units of the question bank'),
+    h('label', { class: 'check' }, units, 'Opens every topic of the question bank'),
     h('label', { class: 'check' }, active, 'On sale'),
     h('div', { class: 'row' },
       tier && h('button', { class: 'danger', onclick: () => { close(); confirmDialog(`Delete ${tier.name}?`, 'It can no longer be bought. Accounts on it keep premium until their time runs out, without the plan\'s own AI allowance. To stop selling it but keep it for those who have it, untick "On sale" instead.', 'Delete', async () => { await attempt(async () => ok(await db.from('tiers').delete().eq('id', tier.id)), 'Plan deleted'); render(); }); } }, 'Delete'),

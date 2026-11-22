@@ -85,6 +85,9 @@ supabase/migrations/   the database, in order:
   0009_payments.sql      buying premium through Paystack
   0010_tiers_and_codes.sql  plans the owner defines, and discount codes
   0011_accounts_tier.sql the accounts list shows each account's plan
+  0012_access_levels_and_flags.sql  guest/free/paid topics, Pro and Ultra, flagged questions
+  0013_avatars_storage.sql  private storage for profile pictures
+  0014_usage_stats.sql   anonymous phone count and the Statistics page
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL
 tools/make_seed.py     regenerates seed.sql from the app's JSON banks

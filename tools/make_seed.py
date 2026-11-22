@@ -38,8 +38,11 @@ def main(folder):
         for t_index, topic in enumerate(data["topics"]):
             counts[1] += 1
             out.append(
-                "insert into public.topics (id, unit_id, name, sort_order) values "
-                f"({q(topic['id'])}, {q(unit['id'])}, {q(topic['name'])}, {t_index})\n"
+                # "access" is only set when the topic is new: who can use a
+                # topic is afterwards decided on the admin site.
+                "insert into public.topics (id, unit_id, name, sort_order, access) values "
+                f"({q(topic['id'])}, {q(unit['id'])}, {q(topic['name'])}, {t_index}, "
+                f"{q(topic.get('access', 'paid'))})\n"
                 "  on conflict (id) do update set unit_id = excluded.unit_id, "
                 "name = excluded.name, sort_order = excluded.sort_order;"
             )

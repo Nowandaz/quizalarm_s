@@ -143,15 +143,13 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
         }
 
     async def require_allowance(store: Store, user: User, counted: bool) -> dict:
-        if not counted:
-            config = await store.config()
-            if config.get("ai_enabled") is False:
-                raise HTTPException(503, "AI features are switched off for now.")
-            return {}
         status = await allowance(store, user)
         if not status["enabled"]:
             raise HTTPException(503, "AI features are switched off for now.")
-        if status["remaining"] <= 0:
+        if status["limit"] <= 0:
+            # The plan has no AI at all (a free account).
+            raise HTTPException(403, "AI is part of Pro. Upgrade to use it.")
+        if counted and status["remaining"] <= 0:
             raise HTTPException(429, f"You have used today's {status['limit']} AI requests. They reset at midnight UTC.")
         return status
 
