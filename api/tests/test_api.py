@@ -243,12 +243,23 @@ def test_student_text_is_quoted_as_data(client, world):
 
 
 def test_grading_is_not_stopped_by_the_daily_limit(client, world):
-    world.config["ai_daily_limit_free"] = 0
+    world.usage = [{"user_id": "user-1", "kind": "generate", "id": n} for n in (1, 2)]  # allowance used up
     world.reply = json.dumps({"correct": True})
     response = client.post("/v1/ai/grade", headers=auth(), json={
         "question": "Drug of choice for anaphylaxis?", "correct_answer": "Adrenaline", "user_answer": "epinefrine"})
     assert response.json() == {"correct": True}
-    assert world.usage == [{"user_id": "user-1", "kind": "grade", "id": 1}]
+    assert world.usage[-1]["kind"] == "grade"
+
+
+def test_a_plan_without_ai_gets_no_ai_at_all(client, world):
+    world.config["ai_daily_limit_free"] = 0
+    for path, body in (("/v1/ai/generate", GENERATE),
+                       ("/v1/ai/grade", {"question": "Q?", "correct_answer": "A", "user_answer": "a"})):
+        response = client.post(path, json=body, headers=auth())
+        assert response.status_code == 403 and "Pro" in response.json()["detail"]
+    assert world.ai_calls == [] and world.usage == []
+    # A paid account is not affected.
+    assert client.post("/v1/ai/generate", json=GENERATE, headers=auth("rich")).status_code == 200
 
 
 def test_oversized_requests_are_refused(client, world):

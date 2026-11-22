@@ -35,7 +35,7 @@
 |---|---|---|---|
 | `profiles` | One row per account; `role` (`user`/`admin`) and `plan` (`free`/`premium`) | Yourself; admins | Yourself (not your role or plan); admins |
 | `units`, `topics` | The structure of the question bank | Everyone | Admins |
-| `questions` | Text, 5 options or none, answer, accepted alternatives, explanation, picture, `draft`/`published` | Everyone for free units (published only); premium users for premium units; admins (all) | Admins |
+| `questions` | Text, 5 options or none, answer, accepted alternatives, explanation, picture, `draft`/`published` | By plan (see "Who gets what"); admins (all) | Admins |
 | `user_sessions` | Each alarm ring or practice session | Its owner | Its owner |
 | `user_attempts` | Every answer given | Its owner | Its owner |
 | `user_questions` | Questions the AI wrote for that user | Its owner | Its owner |
@@ -71,19 +71,31 @@ Design choices:
   hands out the switched-on providers in weighted round-robin order.
   `report_ai_provider_error()` records a failure so the owner sees it.
 
-## Paid features (groundwork only)
+## Who gets what (plans)
 
-Nothing is charged yet, but the database is ready for it:
+| Level | Who | Questions the database hands out | Other limits |
+|-------|-----|----------------------------------|--------------|
+| Guest | No account | First 10 questions of topics marked **Starter** (`access = 'guest'`) | 3 alarms (in the app) |
+| Free | Account, no running plan | The same, plus the first 10 of topics marked **Free** | No AI; trends locked; alarms at full volume |
+| Pro / Ultra | A running paid plan | Every published question | AI calls per day set on the plan (100 / 500) |
 
-- every profile has a `plan` (`free` or `premium`) and an optional end
-  date; only the server or an admin can change them;
-- a unit can be marked `premium`. Its name is visible to everyone (so the
-  app can offer it), but its questions are only handed to signed-in users
-  whose premium plan is still running.
+- Each topic has `access` (`guest`, `free` or `paid`; new topics are
+  `paid`), set in the topic's dialog on the admin site. Topic NAMES are
+  readable by everyone, so the app shows locked topics with a padlock.
+- The rule lives in the database (`can_sample()` and the read policy on
+  `questions`, migration 0012), not in the app: a free account cannot
+  download a paid question. The sample size is `app_config.sample_questions`.
+- A free account's AI limit is 0, and the API answers 403 "AI is part of
+  Pro" for it (also for marking typed answers).
+- The app remembers when the plan ends and when it last heard from the
+  server. When the end passes, or after 7 days without contact, it locks
+  the paid features by itself until it is online again
+  (`lib/services/entitlements.dart` in the app).
+- `question_flags`: questions people flagged from their history; admins
+  read them with `admin_list_flags()` and close them with
+  `admin_resolve_flag()` (page "Flagged questions").
 
-What is still missing for real payments: a payment provider, and a server
-endpoint that sets `plan` when a payment is confirmed. Other paid features
-(for example a higher daily AI limit) can key off the same `plan` field.
+Payments are described in [PAYMENTS.md](PAYMENTS.md).
 
 ## Naming
 

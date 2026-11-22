@@ -11,7 +11,7 @@ update public.profiles set role = 'admin'
   where id = '00000000-0000-0000-0000-00000000000a';
 
 insert into public.units  values ('u1', 'Unit one');
-insert into public.topics (id, unit_id, name) values ('t1', 'u1', 'Topic one');
+insert into public.topics (id, unit_id, name, access) values ('t1', 'u1', 'Topic one', 'guest');
 insert into public.questions (id, topic_id, type, text, answer) values
   ('q1', 't1', 'saq', 'Published?', 'Yes');
 insert into public.questions (id, topic_id, type, text, answer, status) values

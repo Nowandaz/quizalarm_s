@@ -56,6 +56,8 @@ const ICONS = {
   gauge: 'M4 18a8 8 0 1116 0M12 18l4-6',
   alarm: 'M12 21a8 8 0 100-16 8 8 0 000 16M12 9v4l2.5 2M5 3L2 6M19 3l3 3',
   card: 'M3 6h18v12H3zM3 10h18M7 15h4',
+  flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3',
 };
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -311,6 +313,7 @@ function renderShell() {
         h('div', { class: 'brand-sub' }, 'Admin'),
         link('dashboard', 'Dashboard', 'home'),
         link('bank', 'Question bank', 'book'),
+        link('flags', 'Flagged questions', 'flag'),
         link('alarms', 'Alarm reports', 'alarm'),
         isOwner() && link('users', 'Accounts', 'users'),
         isOwner() && link('payments', 'Payments', 'card'),
@@ -325,6 +328,7 @@ function renderShell() {
   const pages = {
     dashboard: () => pageDashboard(main),
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
+    flags: () => pageFlags(main),
     alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
     payments: () => (isOwner() ? pagePayments(main) : pageDashboard(main)),
@@ -395,7 +399,6 @@ async function pageBank(main) {
           h('h3', {}, u.name),
           h('div', { class: 'row' },
             u.deleted_at && h('span', { class: 'pill bad' }, 'Deleted'),
-            u.premium ? h('span', { class: 'pill accent' }, 'Premium') : h('span', { class: 'pill' }, 'Free'),
             h('button', { class: 'icon-btn', title: 'Edit unit', onclick: (e) => { e.stopPropagation(); unitDialog(u); } }, icon('edit')))),
         h('p', { class: 'muted small', style: 'min-height:20px;margin:6px 0 12px' }, u.description || 'No description.'),
         h('div', { class: 'row small' },
@@ -410,14 +413,12 @@ function unitDialog(unit, nextOrder = 0) {
   const name = h('input', { type: 'text', value: unit ? unit.name : '' });
   const description = h('textarea', {}, unit ? unit.description : '');
   const order = h('input', { type: 'number', value: unit ? unit.sort_order : nextOrder });
-  const premium = h('input', { type: 'checkbox', checked: unit && unit.premium });
   dialog((close) => [
     h('h2', {}, unit ? 'Edit unit' : 'Add unit'),
     field('Name', name),
     field('Description', description),
     field('Order', order, 'Lower numbers come first in the app.'),
-    h('label', { class: 'check' }, premium, 'Premium unit'),
-    h('p', { class: 'muted small' }, 'Everyone sees that a premium unit exists, but only signed-in users with a premium plan get its questions.'),
+    h('p', { class: 'muted small' }, 'Who can use the questions is set on each topic.'),
     h('div', { class: 'row' },
       unit && (unit.deleted_at
         ? h('button', { onclick: async () => { await attempt(async () => ok(await db.from('units').update({ deleted_at: null }).eq('id', unit.id)), 'Unit restored'); close(); render(); } }, 'Restore')
@@ -425,7 +426,7 @@ function unitDialog(unit, nextOrder = 0) {
       h('button', { class: 'right', onclick: close }, 'Cancel'),
       h('button', { class: 'primary', onclick: async () => {
         if (!name.value.trim()) { toast('Give the unit a name', true); return; }
-        const row = { name: name.value.trim(), description: description.value.trim(), sort_order: Number(order.value) || 0, premium: premium.checked };
+        const row = { name: name.value.trim(), description: description.value.trim(), sort_order: Number(order.value) || 0 };
         const saved = await attempt(async () => {
           if (unit) return ok(await db.from('units').update(row).eq('id', unit.id).select());
           return ok(await db.from('units').insert({ id: await freeId('units', slug(row.name)), ...row }).select());
@@ -452,7 +453,7 @@ async function pageUnit(main, unitId) {
 
   fill(main, 
     h('div', { class: 'crumbs' }, h('a', { href: '#/bank' }, 'Question bank'), ' / ', unit.name),
-    pageHead([unit.name, unit.premium && h('span', { class: 'pill accent', style: 'margin-left:10px;vertical-align:middle' }, 'Premium')],
+    pageHead(unit.name,
       unit.description || 'No description.',
       h('button', { onclick: () => exportUnit(unit) }, icon('download'), 'Export'),
       h('button', { onclick: () => unitDialog(unit) }, icon('edit'), 'Edit unit'),
@@ -465,6 +466,7 @@ async function pageUnit(main, unitId) {
         h('div', { class: 'row spread' },
           h('h3', {}, t.name, t.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted')),
           h('div', { class: 'row small' },
+            accessPill(t.access),
             h('span', {}, h('b', {}, qs.length), ' questions'),
             drafts > 0 && h('span', { class: 'pill' }, `${drafts} draft${drafts === 1 ? '' : 's'}`),
             qs.some((q) => q.image_path) && h('span', { class: 'pill accent' }, 'Pictures'),
@@ -473,13 +475,28 @@ async function pageUnit(main, unitId) {
     })));
 }
 
+// Who gets a topic's questions. The names of all topics show to everyone
+// (the locked ones with a padlock in the app).
+const ACCESS = {
+  guest: ['Starter', 'Everyone, even without an account'],
+  free: ['Free', 'Anyone with a free account'],
+  paid: ['Paid', 'Paid plans only'],
+};
+function accessPill(access) {
+  const [label] = ACCESS[access] || ACCESS.paid;
+  return h('span', { class: access === 'paid' || !ACCESS[access] ? 'pill accent' : 'pill ok', title: (ACCESS[access] || ACCESS.paid)[1] }, label);
+}
+
 function topicDialog(unit, topic, nextOrder = 0) {
   const name = h('input', { type: 'text', value: topic ? topic.name : '' });
   const order = h('input', { type: 'number', value: topic ? topic.sort_order : nextOrder });
+  const current = (topic && topic.access) || 'paid';
+  const access = h('select', {}, Object.entries(ACCESS).map(([value, [, text]]) => h('option', { value, selected: value === current }, text)));
   dialog((close) => [
     h('h2', {}, topic ? 'Edit topic' : `Add a topic to ${unit.name}`),
     field('Name', name),
     field('Order', order),
+    field('Who can use it', access, 'Without a paid plan, people get only the first 10 questions of a topic that is open to them. Paid plans get every question of every topic.'),
     h('div', { class: 'row' },
       topic && (topic.deleted_at
         ? h('button', { onclick: async () => { await attempt(async () => ok(await db.from('topics').update({ deleted_at: null }).eq('id', topic.id)), 'Topic restored'); close(); render(); } }, 'Restore')
@@ -487,7 +504,7 @@ function topicDialog(unit, topic, nextOrder = 0) {
       h('button', { class: 'right', onclick: close }, 'Cancel'),
       h('button', { class: 'primary', onclick: async () => {
         if (!name.value.trim()) { toast('Give the topic a name', true); return; }
-        const row = { name: name.value.trim(), sort_order: Number(order.value) || 0 };
+        const row = { name: name.value.trim(), sort_order: Number(order.value) || 0, access: access.value };
         const saved = await attempt(async () => {
           if (topic) return ok(await db.from('topics').update(row).eq('id', topic.id).select());
           return ok(await db.from('topics').insert({ id: await freeId('topics', `${unit.id}-${slug(row.name)}`), unit_id: unit.id, ...row }).select());
@@ -859,6 +876,59 @@ async function pageAlarms(main) {
   await drawList();
 }
 
+// -------------------------------------------------------- flagged questions
+
+const FLAG_REASONS = {
+  wrong_answer: 'The answer is wrong',
+  unclear: 'The question is unclear',
+  typo: 'Spelling or typo',
+  picture: 'Picture is wrong or missing',
+  other: 'Something else',
+};
+
+async function pageFlags(main) {
+  let onlyOpen = true;
+  const list = h('div', { class: 'list' });
+  const chips = h('div', { class: 'chips', style: 'margin-bottom:12px' });
+
+  const draw = async () => {
+    fill(chips,
+      h('button', { class: onlyOpen ? 'chip on' : 'chip', onclick: () => { onlyOpen = true; attempt(draw); } }, 'To look at'),
+      h('button', { class: !onlyOpen ? 'chip on' : 'chip', onclick: () => { onlyOpen = false; attempt(draw); } }, 'All flags'));
+    const flags = ok(await db.rpc('admin_list_flags', { only_open: onlyOpen, max_rows: 200 }));
+    fill(list, flags.map((f) => {
+      const changed = f.in_bank && f.current_text && f.question_text && f.current_text.trim() !== f.question_text.trim();
+      const resolve = async (whole) => {
+        await attempt(async () => ok(await db.rpc('admin_resolve_flag', { flag: f.id, resolved: f.status === 'open', whole_question: whole })),
+          f.status === 'open' ? 'Marked as dealt with' : 'Reopened');
+        attempt(draw);
+      };
+      return h('div', { class: f.status === 'open' ? 'card' : 'card gone' },
+        h('div', { class: 'row' },
+          h('div', { class: 'grow' },
+            h('div', { class: 'row' },
+              h('h3', {}, FLAG_REASONS[f.reason] || f.reason),
+              f.others > 0 && h('span', { class: 'pill bad' }, `+${f.others} more on this question`),
+              f.status !== 'open' && h('span', { class: 'pill ok' }, 'Dealt with'),
+              !f.in_bank && h('span', { class: 'pill' }, 'Not in the bank (the user\'s own, or deleted)')),
+            h('div', { class: 'muted small', style: 'margin-top:4px' },
+              `${f.email || 'deleted account'} · ${when(f.created_at)}`, f.in_bank && ` · ${f.unit} / ${f.topic}`)),
+          f.in_bank && h('button', { onclick: () => { location.hash = `#/bank/${encodeURIComponent(f.unit_id)}/${encodeURIComponent(f.topic_id)}`; } }, icon('edit'), 'Open topic'),
+          f.status === 'open' && f.others > 0 && h('button', { onclick: () => resolve(true) }, 'Dealt with (all on this question)'),
+          h('button', { class: f.status === 'open' ? 'primary' : '', onclick: () => resolve(false) }, f.status === 'open' ? 'Dealt with' : 'Reopen')),
+        h('p', { style: 'margin:12px 0 4px' }, f.question_text || f.current_text || '(no question text was sent)'),
+        f.in_bank && h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Answer in the bank: '), f.current_answer),
+        changed && h('div', { class: 'small muted', style: 'margin-top:4px' }, 'The question has been edited since: ', f.current_text),
+        f.note && h('div', { class: 'small', style: 'margin-top:8px' }, h('span', { class: 'muted' }, 'Their note: '), f.note));
+    }), flags.length === 0 && h('div', { class: 'card center muted' }, onlyOpen ? 'No flagged questions waiting.' : 'No question has been flagged yet.'));
+  };
+
+  fill(main,
+    pageHead('Flagged questions', 'Questions people marked for review from their history in the app.'),
+    chips, list);
+  await draw();
+}
+
 // ----------------------------------------------------------------- accounts
 
 async function pageUsers(main) {
@@ -1190,7 +1260,7 @@ async function settingsPlans(body) {
         h('div', { class: 'row small', style: 'margin-bottom:8px' },
           h('span', {}, h('b', {}, price(t.price_month)), ' a month'), h('span', {}, h('b', {}, price(t.price_year)), ' a year')),
         h('ul', { class: 'small', style: 'margin:0;padding-left:18px' }, (t.features || []).map((f) => h('li', {}, f))),
-        !t.premium_units && h('div', { class: 'muted small', style: 'margin-top:8px' }, 'Does not open premium units.'))))),
+        !t.premium_units && h('div', { class: 'muted small', style: 'margin-top:8px' }, 'Does not open the paid topics.'))))),
     h('div', { class: 'section' },
       h('div', { class: 'row spread', style: 'margin-bottom:12px' },
         h('div', {}, h('h2', { style: 'margin:0' }, 'Discount codes'),
@@ -1239,7 +1309,7 @@ function tierDialog(tier, nextOrder = 0) {
     h('div', { class: 'row' },
       h('div', { class: 'grow' }, field('AI requests a day', ai)),
       h('div', { class: 'grow' }, field('Order', order, 'Lower comes first.'))),
-    h('label', { class: 'check' }, units, 'Opens the premium units of the question bank'),
+    h('label', { class: 'check' }, units, 'Opens every topic of the question bank'),
     h('label', { class: 'check' }, active, 'On sale'),
     h('div', { class: 'row' },
       tier && h('button', { class: 'danger', onclick: () => { close(); confirmDialog(`Delete ${tier.name}?`, 'It can no longer be bought. Accounts on it keep premium until their time runs out, without the plan\'s own AI allowance. To stop selling it but keep it for those who have it, untick "On sale" instead.', 'Delete', async () => { await attempt(async () => ok(await db.from('tiers').delete().eq('id', tier.id)), 'Plan deleted'); render(); }); } }, 'Delete'),

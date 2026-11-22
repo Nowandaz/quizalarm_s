@@ -18,19 +18,19 @@
       { id: 'anatomy', name: 'Anatomy', description: '', sort_order: 3, premium: false, deleted_at: days(2) },
     ],
     topics: [
-      { id: 'pharmacology-ans', unit_id: 'pharmacology', name: 'Autonomic nervous system', sort_order: 0, deleted_at: null },
-      { id: 'pharmacology-antibiotics', unit_id: 'pharmacology', name: 'Antibiotics', sort_order: 1, deleted_at: null },
-      { id: 'pharmacology-cvs', unit_id: 'pharmacology', name: 'Cardiovascular drugs', sort_order: 2, deleted_at: null },
-      { id: 'pathology-spotters', unit_id: 'pathology', name: 'Spotters', sort_order: 0, deleted_at: null },
+      { id: 'pharmacology-ans', unit_id: 'pharmacology', name: 'Autonomic nervous system', access: 'free', sort_order: 0, deleted_at: null },
+      { id: 'pharmacology-antibiotics', unit_id: 'pharmacology', name: 'Antibiotics', access: 'paid', sort_order: 1, deleted_at: null },
+      { id: 'pharmacology-cvs', unit_id: 'pharmacology', name: 'Cardiovascular drugs', access: 'guest', sort_order: 2, deleted_at: null },
+      { id: 'pathology-spotters', unit_id: 'pathology', name: 'Spotters', access: 'paid', sort_order: 0, deleted_at: null },
     ],
     questions: [],
     tiers: [
-      { id: 'pro', name: 'Pro', description: 'Everything in the question bank and far more AI.', features: ['Every unit in the question bank, including the premium ones', 'A much higher daily AI allowance', 'Supports new questions being added'], price_month: 300, price_year: 2500, ai_daily_limit: 200, premium_units: true, sort_order: 1, active: true },
-      { id: 'max', name: 'Max', description: 'For heavy use before exams.', features: ['Everything in Pro', '500 AI requests a day', 'First to get new units'], price_month: 800, price_year: null, ai_daily_limit: 500, premium_units: true, sort_order: 2, active: true },
+      { id: 'pro', name: 'Pro', description: 'The whole question bank, the AI and your own alarm volume.', features: ['Every topic in the question bank', 'AI tutor and new AI questions: 100 a day', 'Trends and figures for every topic', 'Choose and lock each alarm\'s volume'], price_month: 100, price_year: null, ai_daily_limit: 100, premium_units: true, sort_order: 1, active: true },
+      { id: 'ultra', name: 'Ultra', description: 'Everything in Pro, far more AI and faster support.', features: ['Everything in Pro', 'AI tutor and new AI questions: 500 a day', 'Faster replies from the support team'], price_month: 150, price_year: null, ai_daily_limit: 500, premium_units: true, sort_order: 2, active: true },
     ],
     promo_codes: [
       { code: 'HALF', percent_off: 50, tier: null, max_uses: 20, used: 1, expires_at: null, active: true, note: 'Launch week', created_at: days(3) },
-      { code: 'GIFT', percent_off: 100, tier: 'max', max_uses: 5, used: 1, expires_at: days(-30), active: true, note: 'Class reps', created_at: days(2) },
+      { code: 'GIFT', percent_off: 100, tier: 'ultra', max_uses: 5, used: 1, expires_at: days(-30), active: true, note: 'Class reps', created_at: days(2) },
     ],
     app_config: [
       { key: 'ai_daily_limit_free', value: 10, note: 'AI calls a free user may make each day' },
@@ -120,20 +120,28 @@
   ];
 
   const payRows = [
-    { id: 5, created_at: ago(90), paid_at: ago(89), email: 'dan@example.com', tier: 'max', tier_name: 'Max', plan: 'month', days: 30, amount: 0, full_amount: 80000, code: 'GIFT', currency: 'KES', status: 'paid', channel: '', note: '', reference: 'bw_77aa01c3e9' },
+    { id: 5, created_at: ago(90), paid_at: ago(89), email: 'dan@example.com', tier: 'ultra', tier_name: 'Ultra', plan: 'month', days: 30, amount: 0, full_amount: 80000, code: 'GIFT', currency: 'KES', status: 'paid', channel: '', note: '', reference: 'bw_77aa01c3e9' },
     { id: 4, created_at: ago(200), paid_at: ago(198), email: 'brian@example.com', tier: 'pro', tier_name: 'Pro', plan: 'year', days: 365, amount: 250000, full_amount: 250000, code: null, currency: 'KES', status: 'paid', channel: 'mobile_money', note: '', reference: 'bw_4f1c9a0e7d' },
-    { id: 3, created_at: ago(900), paid_at: ago(899), email: 'eve@example.com', tier: 'max', tier_name: 'Max', plan: 'month', days: 30, amount: 40000, full_amount: 80000, code: 'HALF', currency: 'KES', status: 'paid', channel: 'card', note: '', reference: 'bw_19c0b7d2a4' },
+    { id: 3, created_at: ago(900), paid_at: ago(899), email: 'eve@example.com', tier: 'ultra', tier_name: 'Ultra', plan: 'month', days: 30, amount: 40000, full_amount: 80000, code: 'HALF', currency: 'KES', status: 'paid', channel: 'card', note: '', reference: 'bw_19c0b7d2a4' },
     { id: 2, created_at: ago(1500), paid_at: null, email: 'chao@example.com', tier: 'pro', tier_name: 'Pro', plan: 'month', days: 30, amount: 30000, full_amount: 30000, code: null, currency: 'KES', status: 'pending', channel: '', note: '', reference: 'bw_a81b33c0f2' },
     { id: 1, created_at: ago(4000), paid_at: ago(3998), email: 'amina@example.com', tier: 'pro', tier_name: 'Pro', plan: 'month', days: 30, amount: 30000, full_amount: 30000, code: null, currency: 'KES', status: 'paid', channel: 'mobile_money', note: '', reference: 'bw_0c77de19b5' },
   ];
 
+  const flags = [
+    { id: 'f1', created_at: days(0.2), status: 'open', reason: 'wrong_answer', note: 'Atenolol is beta-1 selective, so B should be accepted too.', email: 'amina@example.com', question_id: 'q-cvs-3', question_text: 'Which of these is a non-selective beta blocker?', in_bank: true, topic_id: 'pharmacology-cvs', topic: 'Cardiovascular drugs', unit_id: 'pharmacology', unit: 'Pharmacology', current_text: 'Which of these is a non-selective beta blocker?', current_answer: 'Propranolol', others: 2 },
+    { id: 'f2', created_at: days(1), status: 'open', reason: 'typo', note: '', email: 'brian@example.com', question_id: 'q-ans-7', question_text: 'Wich receptor does atropine block?', in_bank: true, topic_id: 'pharmacology-ans', topic: 'Autonomic nervous system', unit_id: 'pharmacology', unit: 'Pharmacology', current_text: 'Which receptor does atropine block?', current_answer: 'Muscarinic', others: 0 },
+    { id: 'f3', created_at: days(3), status: 'resolved', reason: 'picture', note: 'The picture does not load.', email: 'carol@example.com', question_id: 'q-spot-2', question_text: 'Name the cell shown.', in_bank: true, topic_id: 'pathology-spotters', topic: 'Spotters', unit_id: 'pathology', unit: 'Pathology', current_text: 'Name the cell shown.', current_answer: 'Reed-Sternberg cell', others: 0 },
+  ];
+
   const rpcs = {
+    admin_list_flags: ({ only_open }) => flags.filter((f) => !only_open || f.status === 'open').map((f) => ({ ...f })),
+    admin_resolve_flag: ({ flag, resolved }) => { flags.find((f) => f.id === flag).status = resolved ? 'resolved' : 'open'; return 1; },
     admin_list_payments: () => payRows,
     admin_payment_totals: () => ({ paid: 4, pending: 1, failed: 0, buyers: 4, premium_users: 5, expiring_soon: 1,
       income: [{ currency: 'KES', amount: 320000, payments: 3 }],
-      by_tier: [{ tier: 'Pro', period: 'year', currency: 'KES', payments: 1, amount: 250000 }, { tier: 'Max', period: 'month', currency: 'KES', payments: 2, amount: 40000 }, { tier: 'Pro', period: 'month', currency: 'KES', payments: 1, amount: 30000 }],
+      by_tier: [{ tier: 'Pro', period: 'year', currency: 'KES', payments: 1, amount: 250000 }, { tier: 'Ultra', period: 'month', currency: 'KES', payments: 2, amount: 40000 }, { tier: 'Pro', period: 'month', currency: 'KES', payments: 1, amount: 30000 }],
       by_channel: [{ channel: 'mobile_money', payments: 2 }, { channel: 'card', payments: 1 }, { channel: 'code (free)', payments: 1 }],
-      members: [{ tier: 'Pro', accounts: 3 }, { tier: 'Max', accounts: 1 }, { tier: 'Premium (by hand)', accounts: 1 }] }),
+      members: [{ tier: 'Pro', accounts: 3 }, { tier: 'Ultra', accounts: 1 }, { tier: 'Premium (by hand)', accounts: 1 }] }),
     admin_alarm_health: () => ({ rang: 412, missed: 9, reports: 2, open_reports: alarmReports.filter((r) => !r.resolved && !r.detail.rang).length, false_alarms: 1, late_over_a_minute: 6, phones_reporting: 38,
       missed_by_device: [{ device: 'Tecno Camon 30 (Android 14)', missed: 5, users: 3 }, { device: 'Xiaomi Redmi Note 13 (Android 14)', missed: 3, users: 2 }, { device: 'Samsung SM-A155F (Android 15)', missed: 1, users: 1 }],
       problems: [{ problem: 'never_rang', reports: 1 }, { problem: 'no_sound', reports: 1 }] }),

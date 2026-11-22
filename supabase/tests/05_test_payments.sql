@@ -71,6 +71,7 @@ select pg_temp.expect(
 
 -- Tiers and codes (part 10).
 reset role;
+update public.tiers set price_month = 300 where id = 'pro';  -- a round number for the sums below
 insert into public.tiers (id, name, price_month, price_year, ai_daily_limit, premium_units, sort_order)
   values ('max', 'Max', 800, null, 500, true, 2), ('lite', 'Lite', 100, 900, 50, false, 0);
 insert into public.promo_codes (code, percent_off, tier, max_uses, expires_at) values
@@ -87,7 +88,7 @@ select pg_temp.expect((select count(*) >= 3 from public.tiers), 'anyone can read
 
 select pg_temp.act_as(null, 'service_role');
 select pg_temp.expect((select q ->> 'price' = '300.00' and q ->> 'days' = '30' and q ->> 'currency' = 'KES'
-  from public.quote_payment('pro', 'month') q), 'the first tier kept the old price');
+  from public.quote_payment('pro', 'month') q), 'a tier is quoted at its monthly price');
 select pg_temp.expect((select (q ->> 'ok')::boolean = false from public.quote_payment('max', 'year') q),
   'a period with no price is not on sale');
 select pg_temp.expect((select q ->> 'price' = '150.00' and q ->> 'percent_off' = '50' and q ->> 'code' = 'HALF'
