@@ -88,8 +88,8 @@ Design choices:
 - A free account's AI limit is 0, and the API answers 403 "AI is part of
   Pro" for it (also for marking typed answers).
 - The app remembers when the plan ends and when it last heard from the
-  server. When the end passes, or after 7 days without contact, it locks
-  the paid features by itself until it is online again
+  server. At the end it asks the server; offline, the paid features stay
+  open three more days and then lock until it is online again
   (`lib/services/entitlements.dart` in the app).
 - `question_flags`: questions people flagged from their history; admins
   read them with `admin_list_flags()` and close them with
