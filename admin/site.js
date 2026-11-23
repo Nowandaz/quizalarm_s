@@ -29,6 +29,7 @@
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     tick: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
     arrow: 'M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z',
+    review: 'M20 3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H4V5h16v14zM5 10h5v2H5zm0-3h5v2H5zm0 6h5v2H5zm9.59 3.42l-2.83-2.84 1.41-1.41 1.42 1.41 3.17-3.17 1.41 1.42z',
   };
 
   var app = document.getElementById('demo');
@@ -38,7 +39,16 @@
   var note = document.getElementById('demo-note');
   var invite = document.getElementById('invite');
   var phone = document.getElementById('demo-phone');
-  var questions = SPARE.slice(), at = 0, streak = 0, wrongRun = 0, busy = false;
+  var questions = SPARE.slice(), at = 0, streak = 0, wrongRun = 0, missed = 0, busy = false;
+
+  // Where a question's picture is: pictures that ship with the app are
+  // kept on this site, the rest in the question bank's picture store.
+  function pictureUrl(path) {
+    if (!path) return '';
+    if (/^https?:/.test(path)) return path;
+    if (path.indexOf('seed/') === 0) return path;
+    return config.supabaseUrl + '/storage/v1/object/public/' + (config.imageBucket || 'question-images') + '/' + path;
+  }
 
   function el(tag, cls, text) { var x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; }
   function svg(name) { var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); var p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', ICON[name]); s.appendChild(p); return s; }
@@ -82,7 +92,8 @@
     var q = questions[at % questions.length];
     var view = el('div', 'view');
     view.appendChild(el('div', 'q-topic', 'TOPIC: ' + String(q.topic || '').toUpperCase()));
-    view.appendChild(el('div', 'q-text', q.text));
+    if (q.image_path) { var pic = el('img', 'q-pic'); pic.src = pictureUrl(q.image_path); pic.alt = 'The picture this question is about'; view.appendChild(pic); }
+    view.appendChild(el('div', q.image_path ? 'q-text with-pic' : 'q-text', q.text));
     if (q.type === 'mcq') {
       (q.options || []).forEach(function (option, i) {
         var b = el('button', 'q-opt');
@@ -122,11 +133,12 @@
       show(ok);
       setTimeout(function () { at++; ask(); }, hint ? 1900 : 1200);
     } else {
-      streak = 0; wrongRun++; header();
+      streak = 0; wrongRun++; missed++; header();
       if (!calm) { app.classList.remove('shake'); void app.offsetWidth; app.classList.add('shake'); }
       var card = el('div', 'view wrong');
       var head = el('div', 'wrong-head'); var x = svg('cancel'); x.style.fill = '#ff453a'; head.appendChild(x); head.appendChild(document.createTextNode('Not quite')); head.appendChild(el('span', '', 'Streak reset'));
       card.appendChild(head);
+      if (q.image_path) { var small = el('img', 'q-pic small'); small.src = pictureUrl(q.image_path); small.alt = ''; card.appendChild(small); }
       card.appendChild(el('div', 'wrong-q', q.text));
       var box = function (cls, icon, label, text) {
         var b = el('div', 'abox ' + cls); var i = svg(icon); i.style.fill = 'currentColor'; b.appendChild(i);
@@ -148,8 +160,22 @@
     view.appendChild(svg('check'));
     view.appendChild(el('h4', '', 'Good morning!'));
     view.appendChild(el('p', '', 'Alarm off. It is 5:33 AM.'));
-    var again = el('button', 'next', 'Ring it again');
-    again.onclick = function () { streak = 0; wrongRun = 0; at++; header(); ringing(true); ask(); };
+    // As in the app: after a rough morning, the missed ones can be reviewed.
+    if (missed > 0) {
+      var review = el('button', 'review'); review.appendChild(svg('review'));
+      review.appendChild(document.createTextNode('Review ' + missed + ' missed question' + (missed === 1 ? '' : 's')));
+      var tip = el('p', 'review-tip', 'Tap to go over what you got wrong.');
+      review.onclick = function () {
+        tip.textContent = '';
+        tip.className = 'review-tip get';
+        tip.appendChild(document.createTextNode('Reviewing missed questions is in the app. '));
+        var link = el('a', '', 'Download it'); link.href = '#download'; tip.appendChild(link);
+        tip.appendChild(document.createTextNode(' to go over yours every morning.'));
+      };
+      view.appendChild(review); view.appendChild(tip);
+    }
+    var again = el('button', 'again-link', 'Ring it again');
+    again.onclick = function () { streak = 0; wrongRun = 0; missed = 0; at++; header(); ringing(true); ask(); };
     view.appendChild(again);
     show(view);
     ringing(false);
@@ -172,7 +198,8 @@
       }).then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
         // Short ones only: the phone on the page is small.
         var fit = (rows || []).filter(function (q) {
-          return q.text && q.answer && q.text.length <= 130 && (q.type !== 'mcq' || ((q.options || []).length === 5 && q.options.every(function (o) { return o.length <= 46; })));
+          var room = q.image_path ? 90 : 130, wide = q.image_path ? 34 : 46;
+          return q.text && q.answer && q.text.length <= room && (q.type !== 'mcq' || ((q.options || []).length === 5 && q.options.every(function (o) { return o.length <= wide; })));
         });
         if (fit.length >= 3 && streak === 0 && wrongRun === 0 && !busy) { questions = fit; at = 0; ask(); }
         else if (fit.length >= 3) { questions = fit; }

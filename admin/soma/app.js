@@ -551,7 +551,7 @@ function questionCard(topic, x, number) {
         x.source === 'ai' && h('span', { class: 'pill accent' }, 'AI'),
         x.image_path && h('span', { class: 'pill accent' }, 'Picture'),
         // Whether the alarm demo on the website's front page may ask it.
-        !x.deleted_at && x.status !== 'draft' && !x.image_path && h('button', {
+        !x.deleted_at && x.status !== 'draft' && h('button', {
           class: x.on_homepage ? 'chip on' : 'chip', style: 'margin-left:auto',
           title: 'The alarm demo on the home page asks the questions switched on here. Their answers become public.',
           onclick: async (e) => {
