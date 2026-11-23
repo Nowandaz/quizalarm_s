@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="brand/favicon.png">
+  <title>Brain O' Clock</title>
+  <style>
+    :root { --bg: #f7f6f2; --card: #ffffff; --ink: #1c1b22; --muted: #5d5b68; --line: #e4e2da; --accent: #1f4fd1; --on: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0b0c10; --card: #15171d; --ink: #f1f0f5; --muted: #a9a7b6; --line: #2a2c36; --accent: #8ab4f8; --on: #0b0c10; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
+      font: 17px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-align: center; }
+    main { padding: 28px 18px; width: 100%; max-width: 440px; }
+    h1 { font-size: 26px; line-height: 1.2; margin: 14px 0 8px; text-wrap: balance; }
+    p { color: var(--muted); margin: 0 0 20px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 26px 22px; }
+    a.button, button { display: block; width: 100%; padding: 15px 18px; border-radius: 13px; border: 0; font: inherit; font-weight: 700;
+      background: var(--accent); color: var(--on); text-decoration: none; cursor: pointer; }
+    button.plain { background: none; color: var(--accent); font-weight: 600; margin-top: 10px; padding: 10px; }
+    .small { font-size: 14px; margin: 16px 0 0; }
+  </style>
+</head>
+<body>
+<main>
+  <img src="brand/mark.png" alt="" width="96" height="96">
+  <div class="card" id="box"><p>One moment...</p></div>
+</main>
+<script src="soma/config.js"></script>
+<script>
+// Where the links in our emails land. It hands the one-time code in the
+// link to the app on this phone (or to the admin site, for staff), so an
+// email never has to show the server's own address. Opening this page
+// does not use the code up; only the app, or the "confirm here" button,
+// does.
+(function () {
+  var query = location.search.slice(1);
+  var cut = query.indexOf('&to=');
+  var to = cut < 0 ? '' : decodeURIComponent(query.slice(cut + 4));
+  var params = new URLSearchParams(cut < 0 ? query : query.slice(0, cut));
+  var hash = params.get('token_hash') || '';
+  var type = params.get('type') || 'signup';
+  var box = document.getElementById('box');
+  var carry = 'token_hash=' + encodeURIComponent(hash) + '&type=' + encodeURIComponent(type);
+
+  function show(title, text, more) {
+    box.innerHTML = '';
+    var h = document.createElement('h1'); h.textContent = title; box.appendChild(h);
+    var p = document.createElement('p'); p.textContent = text; box.appendChild(p);
+    (more || []).forEach(function (el) { box.appendChild(el); });
+  }
+  function el(tag, cls, text) { var x = document.createElement(tag); if (cls) x.className = cls; x.textContent = text; return x; }
+
+  if (!hash) { show('This link is not complete', 'Open the link from the email again, or ask for a new one in the app.'); return; }
+
+  // Staff who asked for a new password on the admin site go back there.
+  if (to.indexOf(location.origin + '/soma') === 0) { location.replace('soma/?' + carry); return; }
+
+  var words = {
+    signup: ['Confirm your email', 'Tap the button to open Brain O\' Clock and finish creating your account.'],
+    recovery: ['Set a new password', 'Tap the button to open Brain O\' Clock and choose your new password.'],
+    magiclink: ['Sign in', 'Tap the button to open Brain O\' Clock and sign in.'],
+    email_change: ['Confirm your new email', 'Tap the button to open Brain O\' Clock and confirm the change.'],
+    invite: ['You are invited', 'Tap the button to open Brain O\' Clock and set up your account.']
+  }[type] || ['Open Brain O\' Clock', 'Tap the button to continue in the app.'];
+
+  var open = el('a', 'button', 'Open Brain O\' Clock');
+  open.href = 'brainwake://auth?' + carry;
+  var more = [open];
+
+  // Confirming an address does not need the app: offer it here too, for
+  // someone reading the email on another device.
+  if (type === 'signup' || type === 'email_change') {
+    var here = el('button', 'plain', 'Not on the phone with the app? Confirm here');
+    here.onclick = function () {
+      var config = window.BRAINWAKE_CONFIG || {};
+      here.disabled = true; here.textContent = 'Confirming...';
+      fetch(config.supabaseUrl + '/auth/v1/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: config.supabaseKey },
+        body: JSON.stringify({ type: type, token_hash: hash })
+      }).then(function (r) {
+        if (r.ok) show('Email confirmed', 'Now open Brain O\' Clock on your phone and sign in.');
+        else show('This link has expired', 'It was already used or is too old. Sign in to the app, or ask for a new link there.');
+      }).catch(function () { here.disabled = false; here.textContent = 'Could not reach the server. Try again'; });
+    };
+    more.push(here);
+  }
+  more.push(el('p', 'small', 'Nothing happens when you tap the button? Open this email on the phone that has the app.'));
+  show(words[0], words[1], more);
+})();
+</script>
+</body>
+</html>

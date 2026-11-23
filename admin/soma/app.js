@@ -860,21 +860,47 @@ async function pageStats(main) {
   const body = h('div', {});
   const chips = h('div', { class: 'chips' });
   const pct = (part, whole) => (whole > 0 ? `${Math.round(100 * part / whole)}%` : '-');
+  const many = (n, one, more) => `${n} ${n === 1 ? one : (more || `${one}s`)}`;
+  const shortDay = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const card = (iconName, value, label, note) => h('div', { class: 'card stat' },
     h('div', { class: 'ic' }, icon(iconName)),
     h('div', {}, h('b', {}, value ?? 0), h('span', {}, label), note && h('span', { class: 'muted small', style: 'display:block' }, note)));
-  // A row of thin bars, one per day.
-  const spark = (rows, key, title) => {
-    const most = Math.max(1, ...rows.map((r) => r[key]));
+  const lead = (text) => h('p', { class: 'lead' }, text);
+
+  // A bar chart over time. Up to a month: one bar a day. Longer: one bar
+  // a week, so the bars stay wide enough to read. The tallest bar's value
+  // is written on the left, and hovering a bar names its day and count.
+  const chart = (rows, key, title, unit) => {
+    const weekly = rows.length > 35;
+    const bars = [];
+    if (weekly) {
+      for (let i = rows.length; i > 0; i -= 7) {
+        const part = rows.slice(Math.max(0, i - 7), i);
+        bars.unshift({ label: `${shortDay(part[0].day)} to ${shortDay(part[part.length - 1].day)}`, value: part.reduce((n, r) => n + r[key], 0) });
+      }
+    } else {
+      rows.forEach((r) => bars.push({ label: shortDay(r.day), value: r[key] }));
+    }
     const total = rows.reduce((n, r) => n + r[key], 0);
+    const most = Math.max(...bars.map((b) => b.value), 0);
+    const best = bars.find((b) => b.value === most);
+    const activeDays = rows.filter((r) => r[key] > 0).length;
     return h('div', { class: 'card' },
-      h('div', { class: 'row spread' }, h('h3', {}, title), h('b', {}, total)),
-      h('div', { class: 'spark' }, rows.map((r) => h('i', { style: `height:${Math.max(2, Math.round(100 * r[key] / most))}%`, title: `${r.day}: ${r[key]}` }))),
-      h('div', { class: 'row spread muted small' }, h('span', {}, rows[0] ? rows[0].day : ''), h('span', {}, rows.length ? rows[rows.length - 1].day : '')));
+      h('div', { class: 'row spread' }, h('h3', {}, title), h('span', {}, h('b', {}, total), h('span', { class: 'muted small' }, ` in ${rows.length} days`))),
+      total === 0
+        ? h('p', { class: 'muted small', style: 'margin:18px 0 6px' }, `No ${unit} in this period.`)
+        : [
+          h('div', { class: 'chart' },
+            h('div', { class: 'axis' }, h('span', {}, most), h('span', {}, 0)),
+            h('div', { class: 'bars' }, bars.map((b) => h('i', { class: b.value === 0 ? 'none' : '', style: `height:${b.value === 0 ? 0 : Math.max(4, Math.round(100 * b.value / most))}%`, title: `${b.label}: ${b.value}` })))),
+          h('div', { class: 'row spread muted small', style: 'padding-left:34px' }, h('span', {}, shortDay(rows[0].day)), h('span', {}, weekly ? 'one bar = one week' : 'one bar = one day'), h('span', {}, shortDay(rows[rows.length - 1].day))),
+          h('p', { class: 'muted small', style: 'margin:8px 0 0' },
+            `${weekly ? 'Busiest week' : 'Busiest day'}: ${best.label} (${best.value}). ${many(activeDays, 'day')} with any ${unit}.`),
+        ]);
   };
-  const split = (title, parts) => {
+  const split = (title, parts, note) => {
     const whole = parts.reduce((n, [, v]) => n + v, 0);
-    return h('div', { class: 'card' }, h('h3', {}, title),
+    return h('div', { class: 'card' }, h('h3', {}, title), note && h('p', { class: 'muted small', style: 'margin:4px 0 0' }, note),
       parts.map(([label, value]) => h('div', { style: 'margin-top:10px' },
         h('div', { class: 'row spread small' }, h('span', {}, label), h('span', {}, h('b', {}, value), ' ', h('span', { class: 'muted' }, pct(value, whole)))),
         h('div', { class: 'bar', style: 'margin-top:4px' }, h('i', { style: `width:${whole > 0 ? Math.round(100 * value / whole) : 0}%` })))));
@@ -886,51 +912,75 @@ async function pageStats(main) {
     const p = x.phones; const a = x.accounts; const q = x.questions; const al = x.alarms;
     const level = (name) => p.by_level[name] || 0;
     const ended = al.answered + al.timed_out + al.never_rang;
+    const paidAccounts = a.pro + a.ultra;
     fill(body,
-      h('div', { class: 'section' }, h('h2', {}, 'Phones with the app'),
-        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Counted from a small anonymous "I am here" message each phone sends about once a day. Phones on older versions of the app are not counted.'),
+      h('div', { class: 'section' }, h('h2', {}, 'Phones'),
+        lead(`${many(p.active, 'phone')} opened the app in the last ${x.days} days: ${level('guest')} without an account, ${level('free')} on a free account, ${level('pro') + level('ultra')} on a paid plan.`),
         h('div', { class: 'grid' },
-          card('users', p.active, `Active, last ${x.days} days`), card('gauge', p.active_7d, 'Active, last 7 days'),
-          card('plus', p.new, `New, last ${x.days} days`), card('layers', p.total, 'Ever seen'),
-          card('alarm', p.alarms_set, 'Alarms set up on active phones')),
-        h('div', { class: 'grid wide', style: 'margin-top:12px' },
-          split(`Active phones by plan`, [['No account', level('guest')], ['Free account', level('free')], ['Pro', level('pro')], ['Ultra', level('ultra')]]),
-          split('Accounts by plan (all accounts)', [['Free', a.free], ['Pro', a.pro], ['Ultra', a.ultra], ['Premium given by hand', a.by_hand]]),
-          h('div', { class: 'card' }, h('h3', {}, 'App versions in use'),
-            h('table', {}, h('tbody', {}, p.by_version.map((v) => h('tr', {}, h('td', {}, v.version || 'unknown'), h('td', {}, `${v.phones} phone${v.phones === 1 ? '' : 's'}`)))),
-            p.by_version.length === 0 && h('p', { class: 'muted small' }, 'No phone has reported yet.'))))),
+          card('users', p.active, `Phones that opened the app, last ${x.days} days`),
+          card('gauge', p.active_7d, 'Of those, in the last 7 days'),
+          card('plus', p.new, `Seen for the first time, last ${x.days} days`),
+          card('layers', p.total, 'Phones ever seen'),
+          card('alarm', p.alarms_set, 'Alarms set up on those phones')),
+        h('div', { class: 'grid two', style: 'margin-top:12px' },
+          split('Phones by plan', [['No account', level('guest')], ['Free account', level('free')], ['Pro', level('pro')], ['Ultra', level('ultra')]],
+            'What each phone was on when it last opened the app. A phone signed in to an account you made premium by hand counts as Pro.'),
+          h('div', { class: 'card' }, h('h3', {}, 'App versions on those phones'),
+            h('table', {}, h('tbody', {}, p.by_version.map((v) => h('tr', {}, h('td', {}, v.version || 'unknown'), h('td', {}, many(v.phones, 'phone')))))),
+            p.by_version.length === 0 && h('p', { class: 'muted small' }, 'No phone has reported yet.'))),
+        h('p', { class: 'muted small', style: 'margin-top:10px' }, 'How phones are counted: each phone sends a small anonymous "I am here" message about once a day. Phones still on an older version of the app send nothing and are not counted.')),
 
-      h('div', { class: 'section' }, h('h2', {}, 'Growth'),
-        h('div', { class: 'grid wide' }, spark(x.by_day, 'new_phones', 'New phones'), spark(x.by_day, 'new_accounts', 'New accounts'))),
+      h('div', { class: 'section' }, h('h2', {}, 'Accounts'),
+        lead(`${many(a.total, 'account')} in all: ${a.free} free, ${paidAccounts} paying (Pro or Ultra) and ${a.by_hand} given premium by hand. ${many(a.new, 'new account')} in the last ${x.days} days.`),
+        h('div', { class: 'grid two' },
+          split('Accounts by plan', [['Free', a.free], ['Pro (paid)', a.pro], ['Ultra (paid)', a.ultra], ['Premium given by hand', a.by_hand]],
+            'Every account that exists, whether or not it opened the app lately.'),
+          h('div', { class: 'card' }, h('h3', {}, 'Why phones and accounts differ'),
+            h('ul', { class: 'small muted', style: 'margin:8px 0 0;padding-left:18px;line-height:1.7' },
+              h('li', {}, 'A phone used without an account is a phone but not an account.'),
+              h('li', {}, 'One account can be signed in on two phones, or on none right now.'),
+              h('li', {}, 'An account whose phone has an older app version is not counted as a phone.'),
+              h('li', {}, 'Staff accounts given premium by hand show as Pro under phones.')))),
+        h('div', { class: 'grid two', style: 'margin-top:12px' }, chart(x.by_day, 'new_phones', 'New phones', 'new phones'), chart(x.by_day, 'new_accounts', 'New accounts', 'new accounts'))),
 
       h('div', { class: 'section' }, h('h2', {}, 'Question bank use'),
-        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'From the answers of people with an account (their history syncs). The last card adds what phones report in total, guests included.'),
+        lead(q.answered > 0
+          ? `${many(q.learners, 'person', 'people')} with an account answered ${many(q.answered, 'question')} in the last ${x.days} days and got ${pct(q.correct, q.answered)} right. ${pct(q.in_alarms, q.answered)} of those answers were given to stop an alarm.`
+          : `Nobody with an account answered a question in the last ${x.days} days.`),
         h('div', { class: 'grid' },
-          card('check', q.answered, `Questions answered, last ${x.days} days`), card('gauge', pct(q.correct, q.answered), 'Answered correctly'),
-          card('users', q.learners, 'People who answered'), card('alarm', q.in_alarms, 'Answered to stop an alarm'),
-          card('layers', q.answered_all_time, 'Answered, all time (accounts)'),
-          card('book', p.answered, 'Answered on all phones, all time', `${pct(p.correct, p.answered)} correct · ${p.sharing} phones share figures`)),
-        h('div', { class: 'grid wide', style: 'margin-top:12px' },
-          spark(x.by_day, 'answers', 'Answers per day')),
+          card('check', q.answered, `Answers, last ${x.days} days`), card('gauge', pct(q.correct, q.answered), 'Of them correct'),
+          card('users', q.learners, 'People who answered'), card('alarm', q.in_alarms, 'Answers given to stop an alarm'),
+          card('layers', q.answered_all_time, 'Answers ever, from accounts'),
+          card('book', p.answered, 'Answers ever, as phones report', `${pct(p.correct, p.answered)} correct · guests included · from ${many(p.sharing, 'phone')} that share figures`)),
+        h('p', { class: 'muted small', style: 'margin-top:10px' }, 'The first five cards come from the synced history of people with an account. The last card is the running total each phone reports, so it also includes people without an account.'),
+        h('div', { style: 'margin-top:12px' }, chart(x.by_day, 'answers', 'Answers over time', 'answers')),
         h('div', { class: 'card', style: 'margin-top:12px' }, h('h3', {}, 'Most used topics'),
-            h('table', {}, h('tbody', {}, q.by_topic.map((t) => h('tr', {}, h('td', {}, t.topic), h('td', {}, `${t.answered} answers`), h('td', { class: 'muted' }, `${pct(t.correct, t.answered)} correct`), h('td', { class: 'muted' }, `${t.learners} ${t.learners === 1 ? 'person' : 'people'}`))))),
-            q.by_topic.length === 0 && h('p', { class: 'muted small' }, 'No answers in this period.')),
+          h('div', { class: 'scroll' }, h('table', {},
+            h('thead', {}, h('tr', {}, h('th', {}, 'Topic'), h('th', {}, 'Answers'), h('th', {}, 'Correct'), h('th', {}, 'People'))),
+            h('tbody', {}, q.by_topic.map((t) => h('tr', {}, h('td', {}, t.topic), h('td', {}, t.answered), h('td', {}, pct(t.correct, t.answered)), h('td', {}, t.learners)))))),
+          q.by_topic.length === 0 && h('p', { class: 'muted small' }, 'No answers in this period.'),
+          h('p', { class: 'muted small', style: 'margin-bottom:0' }, '"People\'s own questions" are questions users wrote themselves or had the AI write for their own topics.')),
         h('div', { class: 'card', style: 'margin-top:12px' }, h('h3', {}, 'Hardest questions'),
-          h('p', { class: 'muted small' }, 'Answered at least 5 times, lowest share correct first. A very low share can also mean the answer in the bank is wrong.'),
-          h('table', {}, h('tbody', {}, q.hardest.map((t) => h('tr', { class: 'click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(t.unit_id)}/${encodeURIComponent(t.topic_id)}`; } },
-            h('td', {}, t.text), h('td', { class: 'muted small' }, t.topic), h('td', {}, h('b', {}, `${t.rate}%`)), h('td', { class: 'muted small' }, `${t.answered} answers`))))),
+          h('p', { class: 'muted small' }, 'Bank questions answered at least 5 times, lowest share correct first. A very low share can also mean the answer in the bank is wrong or too narrow. Click one to open its topic.'),
+          h('div', { class: 'scroll' }, h('table', {},
+            q.hardest.length > 0 && h('thead', {}, h('tr', {}, h('th', {}, 'Question'), h('th', {}, 'Topic'), h('th', {}, 'Correct'), h('th', {}, 'Answers'))),
+            h('tbody', {}, q.hardest.map((t) => h('tr', { class: 'click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(t.unit_id)}/${encodeURIComponent(t.topic_id)}`; } },
+              h('td', {}, t.text), h('td', { class: 'muted small' }, t.topic), h('td', {}, h('b', {}, `${t.rate}%`)), h('td', { class: 'muted small' }, t.answered)))))),
           q.hardest.length === 0 && h('p', { class: 'muted small' }, 'Not enough answers yet.'))),
 
       h('div', { class: 'section' }, h('h2', {}, 'Alarms'),
-        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'From the alarm diaries of people with an account who share diagnostics.'),
+        lead(ended > 0
+          ? `Of ${many(ended, 'alarm')} that were due, ${al.answered} were stopped by answering (${pct(al.answered, ended)}), ${al.timed_out} rang unanswered until they stopped, and ${al.never_rang} never rang.`
+          : `No alarm was recorded in the last ${x.days} days.`),
         h('div', { class: 'grid' },
-          card('alarm', al.rang, 'Alarms rang'), card('check', al.answered, 'Stopped by answering'),
-          card('gauge', pct(al.answered, ended), 'Successful alarms'),
-          card('alarm', al.snoozed, 'Snoozes'), card('edit', al.timed_out, 'Rang unanswered until they stopped'),
-          card('flag', al.never_rang, 'Never rang (noticed by the app)'), card('users', al.people, 'People whose alarms rang'),
-          card('book', p.alarms_ok, 'Stopped by answering, all phones, all time', `${p.alarms_missed} missed`)),
-        h('div', { class: 'grid wide', style: 'margin-top:12px' },
-          spark(x.by_day, 'alarms_answered', 'Alarms answered per day'), spark(x.by_day, 'alarms_missed', 'Alarms missed per day'))));
+          card('check', al.answered, 'Stopped by answering'), card('gauge', pct(al.answered, ended), 'Success rate'),
+          card('edit', al.timed_out, 'Rang unanswered until they stopped'),
+          card('flag', al.never_rang, 'Never rang (noticed by the app)'),
+          card('alarm', al.snoozed, 'Snoozes'), card('users', al.people, 'People whose alarms rang'),
+          card('book', p.alarms_ok, 'Stopped by answering ever, as phones report', `${p.alarms_missed} missed · guests included`)),
+        h('p', { class: 'muted small', style: 'margin-top:10px' }, 'From the alarm diaries of people with an account who share diagnostics; the last card is the running total phones report.'),
+        h('div', { class: 'grid two', style: 'margin-top:12px' },
+          chart(x.by_day, 'alarms_answered', 'Alarms answered', 'answered alarms'), chart(x.by_day, 'alarms_missed', 'Alarms missed', 'missed alarms'))));
   };
 
   fill(main, pageHead('Statistics', 'Who has the app, how the question bank is used and how alarms go.', chips), body);
@@ -1452,4 +1502,23 @@ async function settingsRows(body, wanted, title, about) {
     h('div', { class: 'list' }, rows));
 }
 
-start();
+// A link from one of our emails (see open.html): it carries a one-time
+// code, exchanged here for the sign-in. A "new password" link then shows
+// the new-password page.
+async function openEmailLink() {
+  const params = new URLSearchParams(location.search);
+  const tokenHash = params.get('token_hash');
+  if (!tokenHash) return;
+  const type = params.get('type') || 'recovery';
+  history.replaceState(null, '', location.pathname + location.hash);
+  if (type === 'recovery') changingPassword = true;
+  const { error } = await db.auth.verifyOtp({ token_hash: tokenHash, type });
+  if (error) {
+    changingPassword = false;
+    toast('That link has expired or was already used. Ask for a new one.', true);
+  } else if (type === 'recovery') {
+    renderNewPassword();
+  }
+}
+
+openEmailLink().finally(() => { if (!changingPassword) start(); });
