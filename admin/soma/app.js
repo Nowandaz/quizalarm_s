@@ -1142,7 +1142,7 @@ async function pageReleases(main) {
       h('h3', {}, 'How to put out a new version'),
       h('ol', { class: 'small muted', style: 'margin:8px 0 0;padding-left:20px;line-height:1.8' },
         h('li', {}, 'Raise the version in the app (pubspec.yaml, for example 1.0.1+2) and build it with the release key.'),
-        h('li', {}, 'Put the install file where people can download it. Simplest: add it to the website\'s "download" folder as brain-o-clock-1.0.1.apk and merge, so its address is https://amkausome.onrender.com/download/brain-o-clock-1.0.1.apk.'),
+        h('li', {}, 'Put the install file where people can download it. Simplest: add it to the website\'s "download" folder as brain-o-clock-1.0.1.apk and merge, so its address is https://brainoclock.onrender.com/download/brain-o-clock-1.0.1.apk.'),
         h('li', {}, 'Open that address in a browser to check the file downloads.'),
         h('li', {}, 'Only then press "New version" here. From that moment the home page hands it out and phones are told about it.'))),
     rows.length === 0 && h('div', { class: 'card center muted' }, 'No version has been listed yet, so the home page has no download.'),
@@ -1159,7 +1159,7 @@ async function pageReleases(main) {
 function releaseDialog(release) {
   const r = release || { version: '', url: '', size_mb: '', notes: '' };
   const version = h('input', { type: 'text', value: r.version, placeholder: '1.0.1' });
-  const url = h('input', { type: 'url', value: r.url, placeholder: 'https://amkausome.onrender.com/download/brain-o-clock-1.0.1.apk' });
+  const url = h('input', { type: 'url', value: r.url, placeholder: 'https://brainoclock.onrender.com/download/brain-o-clock-1.0.1.apk' });
   const size = h('input', { type: 'number', step: '0.1', value: r.size_mb || '' });
   const notes = h('textarea', { maxlength: 600 }, r.notes);
   dialog((close) => [
