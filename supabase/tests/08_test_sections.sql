@@ -115,3 +115,28 @@ select pg_temp.act_as(null);
 select pg_temp.expect((select count(*) from public.announcements where title like 'Pharmacology%') = 1, 'anyone can read announcements');
 reset role;
 select 'PASSED: announcements' as result;
+
+-- Marks and long answer questions (part 23).
+reset role;
+update public.topics set access = 'guest' where id = 'tg';
+insert into public.questions (id, topic_id, type, text, answer, marks, long_answer, key_points, created_at) values
+  ('long-1', 'tg', 'saq', 'List 2 loop diuretics (2 marks)', 'Furosemide; bumetanide; torsemide', 2, true,
+   '[["furosemide","frusemide"],["bumetanide"],["torsemide","torasemide"]]', now() - interval '3 days');
+select pg_temp.act_as(null);
+select pg_temp.expect((select count(*) from public.questions where id = 'long-1') = 0,
+  'an app that does not know long answers is not given them');
+select set_config('request.headers', '{"x-app-features":"long-answers"}', false);
+select pg_temp.expect((select marks = 2 and jsonb_array_length(key_points) = 3 from public.questions where id = 'long-1'),
+  'an app that says it knows them gets them, with marks and key points');
+select set_config('request.headers', '', false);
+select pg_temp.expect((select count(*) from jsonb_array_elements(public.homepage_questions(30)) q where q ->> 'text' like 'List 2 loop%') = 0,
+  'the home page demo never asks a long answer question');
+reset role;
+do $$
+begin
+  insert into public.questions (id, topic_id, type, text, options, answer, long_answer)
+    values ('long-bad', 'tg', 'mcq', 'x', '["a","b","c","d","e"]', 'a', true);
+  raise exception 'FAILED: a multiple choice question was marked long answer';
+exception when check_violation then raise notice 'ok: only typed questions can be long answer';
+end $$;
+select 'PASSED: long answers' as result;
