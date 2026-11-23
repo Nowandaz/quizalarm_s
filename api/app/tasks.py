@@ -37,8 +37,24 @@ def generate_prompt(subject: str, count: int, avoid: list[str], objectives: str 
         +
         f'Mix the two types: "mcq" (exactly {OPTION_COUNT} distinct options, one correct, '
         '"answer" copied exactly from the options) and "saq" (short answer of one to '
-        'three words, "options" empty, with "alt_answers" listing other names or '
-        "spellings that are also correct).\n"
+        'three words, "options" empty).\n'
+        "Rules for a saq, because it is marked by comparing what the student types "
+        "with your answers:\n"
+        "- Ask only for something with ONE defensible answer: a name, a drug, an "
+        "organism, a structure, an enzyme, a number. Word the question so that only "
+        'that answer fits ("Which histologic finding distinguishes Crohn\'s disease '
+        'from ulcerative colitis?", not "Typical histologic feature of Crohn\'s '
+        'disease").\n'
+        '- Do not write open questions ("a feature of", "a cause of", "a typical '
+        'finding in", "name one") where several different facts would be right. If a '
+        "good student could give more than one correct answer, make it an mcq "
+        "instead.\n"
+        '- "alt_answers" must list EVERY other answer a fair marker would accept, up '
+        "to 8: synonyms, generic and other common names, abbreviations, British and "
+        "American spellings, singular and plural, and the usual descriptive forms "
+        '(for "Granulomas": "non-caseating granulomas", "noncaseating granuloma", '
+        '"granulomatous inflammation"). Leave it empty only when there truly is no '
+        "other way to say it.\n"
         'Every question needs an "explanation" of two to four sentences: why the answer '
         "is right and, for an mcq, why the tempting wrong options are wrong. Questions "
         "must be unambiguous and cover different parts of the subject.\n"
@@ -163,8 +179,10 @@ def grade_prompt(question: str, correct_answer: str, user_answer: str) -> str:
         f"Question: {quote(question)}\n"
         f"Expected answer: {quote(correct_answer)}\n"
         f"Student answer: {quote(user_answer)}\n"
-        "Is the student answer conceptually correct (spelling slips, synonyms and "
-        "equivalent names are fine)? "
+        "Is the student answer correct? Accept spelling slips, synonyms and "
+        "equivalent names. Also accept an answer that differs from the expected one "
+        "but is itself a well-established, factually correct answer to the question "
+        "as it is worded. Do not accept vague, partial or merely related answers. "
         'Return only JSON: {"correct": true} or {"correct": false}'
     )
 
