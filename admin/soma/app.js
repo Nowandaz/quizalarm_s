@@ -293,6 +293,7 @@ function renderShell() {
         link('alarms', 'Alarm reports', 'alarm'),
         isOwner() && link('users', 'Accounts', 'users'),
         isOwner() && link('payments', 'Payments', 'card'),
+        isOwner() && link('releases', 'App versions', 'download'),
         isOwner() && link('settings', 'Settings', 'settings'),
         h('div', { class: 'who' },
           h('div', { style: 'font-weight:700' }, name),
@@ -309,6 +310,7 @@ function renderShell() {
     alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
     payments: () => (isOwner() ? pagePayments(main) : pageDashboard(main)),
+    releases: () => (isOwner() ? pageReleases(main) : pageDashboard(main)),
     settings: () => (isOwner() ? pageSettings(main, a) : pageDashboard(main)),
   };
   attempt(pages[page] || pages.dashboard);
@@ -1111,6 +1113,62 @@ async function pageUsers(main) {
     h('div', { class: 'card table-wrap', style: 'padding:6px' },
       h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Account'), h('th', {}, 'Role'), h('th', {}, 'Plan'), h('th', {}, 'Phone'), h('th', {}, 'Joined'), h('th', {}, 'Last sign-in'), h('th', {}, 'Answers'), h('th', {}, 'AI calls'), h('th', {}))), body)));
   await load();
+}
+
+// ------------------------------------------------------------ app versions
+
+// The versions of the app people can download. The newest one is what the
+// home page's Download button gives out, and what the app compares itself
+// with to say "an update is out".
+async function pageReleases(main) {
+  const rows = ok(await db.from('app_releases').select('*').order('published_at', { ascending: false }));
+  const latest = rows[0];
+  fill(main,
+    pageHead('App versions', 'The newest one is offered on the home page, and the app tells people on older versions to update.',
+      h('button', { class: 'primary', onclick: () => releaseDialog(null) }, icon('plus'), 'New version')),
+    h('div', { class: 'card', style: 'margin-bottom:12px' },
+      h('h3', {}, 'How to put out a new version'),
+      h('ol', { class: 'small muted', style: 'margin:8px 0 0;padding-left:20px;line-height:1.8' },
+        h('li', {}, 'Raise the version in the app (pubspec.yaml, for example 1.0.1+2) and build it with the release key.'),
+        h('li', {}, 'Put the install file where people can download it. Simplest: add it to the website\'s "download" folder as brain-o-clock-1.0.1.apk and merge, so its address is https://amkausome.onrender.com/download/brain-o-clock-1.0.1.apk.'),
+        h('li', {}, 'Open that address in a browser to check the file downloads.'),
+        h('li', {}, 'Only then press "New version" here. From that moment the home page hands it out and phones are told about it.'))),
+    rows.length === 0 && h('div', { class: 'card center muted' }, 'No version has been listed yet, so the home page has no download.'),
+    h('div', { class: 'list' }, rows.map((r) => h('div', { class: 'card' },
+      h('div', { class: 'row' },
+        h('div', { class: 'grow' },
+          h('div', { class: 'row' }, h('h3', {}, `Version ${r.version}`), r === latest && h('span', { class: 'pill ok' }, 'On the home page'),
+            r.size_mb && h('span', { class: 'pill' }, `${Math.round(r.size_mb)} MB`)),
+          h('div', { class: 'muted small', style: 'margin-top:4px' }, when(r.published_at), ' · ', h('a', { href: r.url, target: '_blank', rel: 'noopener' }, r.url)),
+          r.notes && h('p', { class: 'small', style: 'margin:8px 0 0' }, r.notes)),
+        h('button', { onclick: () => releaseDialog(r) }, icon('edit'), 'Edit'))))));
+}
+
+function releaseDialog(release) {
+  const r = release || { version: '', url: '', size_mb: '', notes: '' };
+  const version = h('input', { type: 'text', value: r.version, placeholder: '1.0.1' });
+  const url = h('input', { type: 'url', value: r.url, placeholder: 'https://amkausome.onrender.com/download/brain-o-clock-1.0.1.apk' });
+  const size = h('input', { type: 'number', step: '0.1', value: r.size_mb || '' });
+  const notes = h('textarea', { maxlength: 600 }, r.notes);
+  dialog((close) => [
+    h('h2', {}, release ? `Edit version ${release.version}` : 'New version'),
+    field('Version', version, 'The same number as in the app, without the part after the plus: 1.0.1, not 1.0.1+2.'),
+    field('Download address', url, 'Where the install file is. Check it downloads before saving.'),
+    field('Size in MB', size, 'Optional. Shown next to the Download button.'),
+    field('What is new', notes, 'One or two plain sentences. Shown on the home page and in the app\'s update notice.'),
+    h('div', { class: 'row' },
+      release && h('button', { class: 'danger', onclick: () => { close(); confirmDialog(`Remove version ${release.version}?`, 'It is no longer offered. If it was the newest, the one before it is offered again.', 'Remove', async () => { await attempt(async () => ok(await db.from('app_releases').delete().eq('id', release.id)), 'Removed'); render(); }); } }, 'Remove'),
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        if (!/^[0-9]+(\.[0-9]+){1,3}$/.test(version.value.trim())) { toast('Write the version like 1.0.1', true); return; }
+        if (!/^https:\/\//.test(url.value.trim())) { toast('The download address must start with https://', true); return; }
+        const row = { version: version.value.trim(), url: url.value.trim(), size_mb: size.value ? Number(size.value) : null, notes: notes.value.trim() };
+        const saved = await attempt(async () => (release
+          ? ok(await db.from('app_releases').update(row).eq('id', release.id).select())
+          : ok(await db.from('app_releases').insert(row).select())), 'Saved');
+        if (saved) { close(); render(); }
+      } }, 'Save')),
+  ]);
 }
 
 // ----------------------------------------------------------------- payments

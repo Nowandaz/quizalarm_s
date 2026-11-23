@@ -138,3 +138,19 @@ select pg_temp.expect(
          from public.app_installs where install = '00000000-0000-0000-0000-00000000bb09'),
   'a phone counted under an old number is folded into its new one, keeping its first day');
 select 'PASSED: one row per phone' as result;
+
+-- App releases (part 17).
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000e1');
+do $$
+begin
+  insert into public.app_releases (version, url) values ('9.9.9', 'https://example.com/x.apk');
+  raise exception 'FAILED: a user published a release';
+exception when insufficient_privilege then
+  raise notice 'ok: a user cannot publish a release';
+end $$;
+reset role;
+insert into public.app_releases (version, url, size_mb, notes) values ('1.0.1', 'https://example.com/a.apk', 24.5, 'Fixes.');
+select pg_temp.act_as(null);
+select pg_temp.expect((select count(*) from public.app_releases) = 1, 'anyone can read the releases');
+reset role;
+select 'PASSED: releases' as result;

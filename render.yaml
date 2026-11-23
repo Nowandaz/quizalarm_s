@@ -23,6 +23,8 @@ services:
       - path: /*
         name: Referrer-Policy
         value: strict-origin-when-cross-origin
-      - path: /*
+      # The home page and legal pages may be found by search engines;
+      # the admin site may not.
+      - path: /soma/*
         name: X-Robots-Tag
         value: noindex, nofollow
