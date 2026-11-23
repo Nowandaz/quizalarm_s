@@ -57,6 +57,7 @@ const ICONS = {
   alarm: 'M12 21a8 8 0 100-16 8 8 0 000 16M12 9v4l2.5 2M5 3L2 6M19 3l3 3',
   card: 'M3 6h18v12H3zM3 10h18M7 15h4',
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  bell: 'M6 16V11a6 6 0 0112 0v5l2 2H4zM10 20a2 2 0 004 0',
   chart: 'M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3',
   lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3',
 };
@@ -290,6 +291,7 @@ function renderShell() {
         link('stats', 'Statistics', 'chart'),
         link('bank', 'Question bank', 'book'),
         link('flags', 'Flagged questions', 'flag'),
+        link('messages', 'Messages to users', 'bell'),
         link('alarms', 'Alarm reports', 'alarm'),
         isOwner() && link('users', 'Accounts', 'users'),
         isOwner() && link('payments', 'Payments', 'card'),
@@ -307,6 +309,7 @@ function renderShell() {
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
     stats: () => pageStats(main),
     flags: () => pageFlags(main),
+    messages: () => pageMessages(main),
     alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
     payments: () => (isOwner() ? pagePayments(main) : pageDashboard(main)),
@@ -426,32 +429,133 @@ async function pageUnit(main, unitId) {
   const unit = ok(await db.from('units').select('*').eq('id', unitId))[0];
   if (!unit) { fill(main, h('p', {}, 'That unit does not exist.')); return; }
   const topics = ok(await db.from('topics').select('*').eq('unit_id', unitId).order('sort_order').order('name'));
+  const sections = ok(await db.from('sections').select('*').eq('unit_id', unitId).is('deleted_at', null).order('sort_order').order('name'));
   const questions = ok(await db.from('questions').select('id, topic_id, status, image_path, deleted_at').in('topic_id', topics.map((t) => t.id).concat('-')));
   const of = (topicId) => questions.filter((q) => q.topic_id === topicId && !q.deleted_at);
   const most = Math.max(1, ...topics.map((t) => of(t.id).length));
+  const subunits = sections.filter((x) => x.kind === 'subunit');
+  const plain = sections.filter((x) => x.kind === 'section');
+  const known = new Set(plain.map((x) => x.id));
+  const topicsIn = (sectionId) => topics.filter((t) => t.section_id === sectionId);
+  const loose = topics.filter((t) => !t.section_id || !known.has(t.section_id));
+  const count = (list) => list.reduce((n, t) => n + of(t.id).length, 0);
 
-  fill(main, 
+  const topicRow = (t) => {
+    const qs = of(t.id);
+    const drafts = qs.filter((q) => q.status === 'draft').length;
+    return h('div', { class: t.deleted_at ? 'card click gone' : 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(unit.id)}/${encodeURIComponent(t.id)}`; } },
+      h('div', { class: 'row spread' },
+        h('h3', {}, t.name, t.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted')),
+        h('div', { class: 'row small' },
+          accessPill(t.access),
+          h('span', {}, h('b', {}, qs.length), ' questions'),
+          drafts > 0 && h('span', { class: 'pill' }, `${drafts} draft${drafts === 1 ? '' : 's'}`),
+          qs.some((q) => q.image_path) && h('span', { class: 'pill accent' }, 'Pictures'),
+          h('button', { class: 'icon-btn', title: 'Edit topic', onclick: (e) => { e.stopPropagation(); topicDialog(unit, t, 0, plain, subunits); } }, icon('edit')))),
+      h('div', { class: 'bar', style: 'margin-top:10px', title: 'Share of this unit\'s questions' }, h('i', { style: `width:${Math.round(100 * qs.length / most)}%` })));
+  };
+  const sectionBlock = (x) => {
+    const mine = topicsIn(x.id);
+    return h('div', { class: 'tree-section' },
+      h('div', { class: 'row spread tree-head' },
+        h('div', {}, h('h3', {}, x.name), h('div', { class: 'muted small' }, `Section · ${mine.length} topic${mine.length === 1 ? '' : 's'} · ${count(mine)} questions`, x.description ? ` · ${x.description}` : '')),
+        h('div', { class: 'row' },
+          h('button', { onclick: () => topicDialog(unit, null, mine.length, plain, subunits, x.id) }, icon('plus'), 'Topic'),
+          h('button', { class: 'icon-btn', title: 'Move this section', onclick: () => moveSectionDialog(unit, x) }, icon('layers')),
+          h('button', { class: 'icon-btn', title: 'Edit section', onclick: () => sectionDialog(unit, x, subunits, mine.length) }, icon('edit')))),
+      mine.length === 0 ? h('div', { class: 'muted small', style: 'padding:6px 2px 10px' }, 'No topics in this section yet.') : h('div', { class: 'list' }, mine.map(topicRow)));
+  };
+
+  fill(main,
     h('div', { class: 'crumbs' }, h('a', { href: '#/bank' }, 'Question bank'), ' / ', unit.name),
     pageHead(unit.name,
       unit.description || 'No description.',
       h('button', { onclick: () => exportUnit(unit) }, icon('download'), 'Export'),
       h('button', { onclick: () => unitDialog(unit) }, icon('edit'), 'Edit unit'),
-      h('button', { class: 'primary', onclick: () => topicDialog(unit, null, topics.length) }, icon('plus'), 'Add topic')),
-    topics.length === 0 && h('div', { class: 'card center muted' }, 'No topics yet.'),
-    h('div', { class: 'list' }, topics.map((t) => {
-      const qs = of(t.id);
-      const drafts = qs.filter((q) => q.status === 'draft').length;
-      return h('div', { class: t.deleted_at ? 'card click gone' : 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(unit.id)}/${encodeURIComponent(t.id)}`; } },
-        h('div', { class: 'row spread' },
-          h('h3', {}, t.name, t.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted')),
-          h('div', { class: 'row small' },
-            accessPill(t.access),
-            h('span', {}, h('b', {}, qs.length), ' questions'),
-            drafts > 0 && h('span', { class: 'pill' }, `${drafts} draft${drafts === 1 ? '' : 's'}`),
-            qs.some((q) => q.image_path) && h('span', { class: 'pill accent' }, 'Pictures'),
-            h('button', { class: 'icon-btn', title: 'Edit topic', onclick: (e) => { e.stopPropagation(); topicDialog(unit, t); } }, icon('edit')))),
-        h('div', { class: 'bar', style: 'margin-top:10px', title: 'Share of this unit\'s questions' }, h('i', { style: `width:${Math.round(100 * qs.length / most)}%` })));
-    })));
+      h('button', { onclick: () => sectionDialog(unit, { kind: 'subunit', sort_order: subunits.length }, subunits, 0) }, icon('plus'), 'Sub unit'),
+      h('button', { class: 'primary', onclick: () => sectionDialog(unit, { kind: 'section', sort_order: plain.length }, subunits, 0) }, icon('plus'), 'Section')),
+    h('p', { class: 'muted small', style: 'margin:-6px 0 14px' }, 'A unit holds sections, and each section holds topics with their questions. Large units can group their sections into sub units (Pathology: Haematology, Immunology...).'),
+    sections.length === 0 && topics.length === 0 && h('div', { class: 'card center muted' }, 'Nothing here yet. Start with a section.'),
+    subunits.map((sub) => {
+      const inside = plain.filter((x) => x.parent_id === sub.id);
+      const all = inside.flatMap((x) => topicsIn(x.id));
+      return h('div', { class: 'tree-subunit' },
+        h('div', { class: 'row spread tree-head' },
+          h('div', {}, h('h2', { style: 'margin:0' }, sub.name), h('div', { class: 'muted small' }, `Sub unit · ${inside.length} section${inside.length === 1 ? '' : 's'} · ${all.length} topics · ${count(all)} questions`)),
+          h('div', { class: 'row' },
+            h('button', { onclick: () => sectionDialog(unit, { kind: 'section', parent_id: sub.id, sort_order: inside.length }, subunits, 0) }, icon('plus'), 'Section'),
+            h('button', { class: 'icon-btn', title: 'Move this sub unit to another unit', onclick: () => moveSectionDialog(unit, sub) }, icon('layers')),
+            h('button', { class: 'icon-btn', title: 'Edit sub unit', onclick: () => sectionDialog(unit, sub, subunits, inside.length) }, icon('edit')))),
+        inside.length === 0 ? h('div', { class: 'muted small', style: 'padding:4px 2px 8px' }, 'No sections in this sub unit yet.') : inside.map(sectionBlock));
+    }),
+    plain.filter((x) => !x.parent_id).map(sectionBlock),
+    loose.length > 0 && h('div', { class: 'tree-section' },
+      h('div', { class: 'tree-head' }, h('h3', {}, 'Not filed in a section'), h('div', { class: 'muted small' }, 'Open a topic\'s edit dialog to file it. The app shows these as "Other topics".')),
+      h('div', { class: 'list' }, loose.map(topicRow))));
+}
+
+// A sub unit or a section: add, rename, reorder, delete.
+function sectionDialog(unit, section, subunits, holds) {
+  const isNew = !section.id;
+  const sub = section.kind === 'subunit';
+  const word = sub ? 'sub unit' : 'section';
+  const name = h('input', { type: 'text', value: section.name || '' });
+  const description = h('input', { type: 'text', value: section.description || '' });
+  const order = h('input', { type: 'number', value: section.sort_order || 0 });
+  const parent = h('select', {}, h('option', { value: '', selected: !section.parent_id }, `Directly in ${unit.name}`),
+    subunits.map((x) => h('option', { value: x.id, selected: section.parent_id === x.id }, `In ${x.name}`)));
+  dialog((close) => [
+    h('h2', {}, isNew ? `Add a ${word} to ${unit.name}` : `Edit ${word}`),
+    field('Name', name, sub ? 'For example Haematology.' : 'For example Autonomic nervous system.'),
+    field('Description', description, 'Optional. One line.'),
+    !sub && subunits.length > 0 && field('Where', parent),
+    field('Order', order, 'Lower numbers come first in the app.'),
+    h('div', { class: 'row' },
+      !isNew && h('button', { class: 'danger', onclick: () => {
+        if (holds > 0) { toast(sub ? 'Move or delete its sections first' : 'Move or delete its topics first', true); return; }
+        close();
+        confirmDialog(`Delete "${section.name}"?`, `The ${word} disappears from the app at its next sync.`, 'Delete', async () => {
+          await attempt(async () => ok(await db.from('sections').update({ deleted_at: new Date().toISOString() }).eq('id', section.id)), 'Deleted'); render();
+        });
+      } }, 'Delete'),
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        if (!name.value.trim()) { toast('Give it a name', true); return; }
+        const row = { name: name.value.trim(), description: description.value.trim(), sort_order: Number(order.value) || 0 };
+        if (!sub) row.parent_id = parent.value || null;
+        const saved = await attempt(async () => {
+          if (!isNew) return ok(await db.from('sections').update(row).eq('id', section.id).select());
+          const id = await freeId('sections', `${unit.id}-${sub ? 'sub' : 'sec'}-${slug(row.name)}`);
+          return ok(await db.from('sections').insert({ id, unit_id: unit.id, kind: section.kind, ...row }).select());
+        }, 'Saved');
+        if (saved) { close(); render(); }
+      } }, 'Save')),
+  ]);
+}
+
+// Moves a section (or a whole sub unit) to another unit, with everything in it.
+async function moveSectionDialog(unit, section) {
+  const sub = section.kind === 'subunit';
+  const units = ok(await db.from('units').select('id, name').is('deleted_at', null).order('sort_order'));
+  const allSubs = ok(await db.from('sections').select('id, unit_id, name').eq('kind', 'subunit').is('deleted_at', null).order('name'));
+  const toUnit = h('select', {}, units.map((u) => h('option', { value: u.id, selected: u.id === unit.id }, u.name)));
+  const toParent = h('select', {});
+  const fillParents = () => fill(toParent, h('option', { value: '' }, 'Directly in the unit'),
+    allSubs.filter((x) => x.unit_id === toUnit.value).map((x) => h('option', { value: x.id, selected: x.id === section.parent_id }, `In ${x.name}`)));
+  toUnit.addEventListener('change', fillParents);
+  fillParents();
+  dialog((close) => [
+    h('h2', {}, `Move "${section.name}"`),
+    h('p', { class: 'muted small' }, sub ? 'Its sections, topics and questions move with it.' : 'Its topics and questions move with it.'),
+    field('To unit', toUnit),
+    !sub && field('Where', toParent),
+    h('div', { class: 'row' },
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        const done = await attempt(async () => ok(await db.rpc('admin_move_section', { section: section.id, to_unit: toUnit.value, to_parent: sub ? null : (toParent.value || null) })), 'Moved');
+        if (done !== undefined) { close(); if (toUnit.value !== unit.id) location.hash = `#/bank/${encodeURIComponent(toUnit.value)}`; else render(); }
+      } }, 'Move')),
+  ]);
 }
 
 // Who gets a topic's questions. The names of all topics show to everyone
@@ -466,14 +570,19 @@ function accessPill(access) {
   return h('span', { class: access === 'paid' || !ACCESS[access] ? 'pill accent' : 'pill ok', title: (ACCESS[access] || ACCESS.paid)[1] }, label);
 }
 
-function topicDialog(unit, topic, nextOrder = 0) {
+function topicDialog(unit, topic, nextOrder = 0, sections = [], subunits = [], inSection = null) {
   const name = h('input', { type: 'text', value: topic ? topic.name : '' });
   const order = h('input', { type: 'number', value: topic ? topic.sort_order : nextOrder });
   const current = (topic && topic.access) || 'paid';
   const access = h('select', {}, Object.entries(ACCESS).map(([value, [, text]]) => h('option', { value, selected: value === current }, text)));
+  const filed = topic ? topic.section_id : inSection;
+  const label = (x) => { const up = subunits.find((u) => u.id === x.parent_id); return up ? `${up.name} / ${x.name}` : x.name; };
+  const section = h('select', {}, h('option', { value: '', selected: !filed }, 'Not filed'),
+    sections.map((x) => h('option', { value: x.id, selected: x.id === filed }, label(x))));
   dialog((close) => [
     h('h2', {}, topic ? 'Edit topic' : `Add a topic to ${unit.name}`),
     field('Name', name),
+    sections.length > 0 && field('Section', section, 'Where the topic sits in the unit.'),
     field('Order', order),
     field('Who can use it', access, 'Without a paid plan, people get only the first 10 questions of a topic that is open to them. Paid plans get every question of every topic.'),
     h('div', { class: 'row' },
@@ -484,6 +593,7 @@ function topicDialog(unit, topic, nextOrder = 0) {
       h('button', { class: 'primary', onclick: async () => {
         if (!name.value.trim()) { toast('Give the topic a name', true); return; }
         const row = { name: name.value.trim(), sort_order: Number(order.value) || 0, access: access.value };
+        if (sections.length > 0) row.section_id = section.value || null;
         const saved = await attempt(async () => {
           if (topic) return ok(await db.from('topics').update(row).eq('id', topic.id).select());
           return ok(await db.from('topics').insert({ id: await freeId('topics', `${unit.id}-${slug(row.name)}`), unit_id: unit.id, ...row }).select());
@@ -1125,6 +1235,60 @@ async function pageUsers(main) {
     h('div', { class: 'card table-wrap', style: 'padding:6px' },
       h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Account'), h('th', {}, 'Role'), h('th', {}, 'Plan'), h('th', {}, 'Phone'), h('th', {}, 'Joined'), h('th', {}, 'Last sign-in'), h('th', {}, 'Answers'), h('th', {}, 'AI calls'), h('th', {}))), body)));
   await load();
+}
+
+// ------------------------------------------------------- messages to users
+
+const AUDIENCES = { all: 'Everyone', guest: 'People without an account', free: 'Free accounts', paid: 'Pro and Ultra' };
+
+// Short messages that appear in the app: as a notification, as a banner on
+// the first screen, and in the app's Messages list.
+async function pageMessages(main) {
+  const rows = ok(await db.from('announcements').select('*').order('published_at', { ascending: false }));
+  const over = (r) => r.expires_at && new Date(r.expires_at) < new Date();
+  fill(main,
+    pageHead('Messages to users', 'A short message shows in the app as a notification and a banner, and stays in its Messages list.',
+      h('button', { class: 'primary', onclick: () => messageDialog(null) }, icon('plus'), 'New message')),
+    h('div', { class: 'card', style: 'margin-bottom:12px' },
+      h('p', { class: 'small muted', style: 'margin:0' }, 'A phone receives a message the next time the app is opened or an alarm rings on it, so most people see it within a day, not instantly. Phones on older versions of the app do not get messages.')),
+    rows.length === 0 && h('div', { class: 'card center muted' }, 'No message has been sent yet.'),
+    h('div', { class: 'list' }, rows.map((r) => h('div', { class: over(r) ? 'card gone' : 'card' },
+      h('div', { class: 'row' },
+        h('div', { class: 'grow' },
+          h('div', { class: 'row' }, h('h3', {}, r.title), h('span', { class: 'pill' }, AUDIENCES[r.audience] || r.audience), over(r) && h('span', { class: 'pill' }, 'No longer shown')),
+          r.body && h('p', { style: 'margin:6px 0 0' }, r.body),
+          h('div', { class: 'muted small', style: 'margin-top:6px' }, `Sent ${when(r.published_at)}`, r.expires_at && ` · shown until ${when(r.expires_at)}`, r.link && [' · opens ', h('a', { href: r.link, target: '_blank', rel: 'noopener' }, r.link)])),
+        h('button', { onclick: () => messageDialog(r) }, icon('edit'), 'Edit'))))));
+}
+
+function messageDialog(message) {
+  const m = message || { title: '', body: '', audience: 'all', link: '', expires_at: null };
+  const title = h('input', { type: 'text', maxlength: 70, value: m.title, placeholder: 'Pharmacology topics uploaded' });
+  const body = h('textarea', { maxlength: 400 }, m.body);
+  const audience = h('select', {}, Object.entries(AUDIENCES).map(([value, text]) => h('option', { value, selected: value === m.audience }, text)));
+  const link = h('input', { type: 'url', value: m.link, placeholder: 'https://' });
+  const until = h('input', { type: 'date', value: m.expires_at ? m.expires_at.slice(0, 10) : '' });
+  dialog((close) => [
+    h('h2', {}, message ? 'Edit message' : 'New message'),
+    field('Title', title, 'Up to 70 letters. This is the notification\'s heading.'),
+    field('Message', body, 'One or two sentences.'),
+    field('Who gets it', audience),
+    field('Opens a web page', link, 'Optional. A button in the app opens this address.'),
+    field('Show until', until, 'Optional. After this day the app stops showing it.'),
+    message && h('p', { class: 'muted small' }, 'Editing changes what people see in the app\'s list. Phones that already showed the notification are not notified again.'),
+    h('div', { class: 'row' },
+      message && h('button', { class: 'danger', onclick: () => { close(); confirmDialog('Delete this message?', 'It disappears from the app at its next check.', 'Delete', async () => { await attempt(async () => ok(await db.from('announcements').delete().eq('id', message.id)), 'Deleted'); render(); }); } }, 'Delete'),
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        if (!title.value.trim()) { toast('Give the message a title', true); return; }
+        if (link.value.trim() && !/^https:\/\//.test(link.value.trim())) { toast('The address must start with https://', true); return; }
+        const row = { title: title.value.trim(), body: body.value.trim(), audience: audience.value, link: link.value.trim(), expires_at: until.value ? new Date(`${until.value}T23:59:59`).toISOString() : null };
+        const saved = await attempt(async () => (message
+          ? ok(await db.from('announcements').update(row).eq('id', message.id).select())
+          : ok(await db.from('announcements').insert(row).select())), message ? 'Saved' : 'Sent');
+        if (saved) { close(); render(); }
+      } }, message ? 'Save' : 'Send')),
+  ]);
 }
 
 // ------------------------------------------------------------ app versions
