@@ -96,3 +96,28 @@ select pg_temp.expect(
 
 reset role;
 select 'PASSED: usage ping and statistics' as result;
+
+-- Devices (part 15).
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000e1');
+select public.app_ping('00000000-0000-0000-0000-00000000aa02', 'free', '1.2.0', 'android', null, null, null, null, 1, 'Tecno Camon 30 (Android 14)');
+select public.app_ping('00000000-0000-0000-0000-00000000aa02', 'free', '1.0.0', 'android');
+select pg_temp.act_as(null);
+select public.app_ping('00000000-0000-0000-0000-00000000aa05', 'guest', '1.2.0', 'android', null, null, null, null, 0, 'Tecno Camon 30 (Android 14)');
+do $$
+begin
+  perform public.admin_devices();
+  raise exception 'FAILED: a visitor listed the phones';
+exception when insufficient_privilege then
+  raise notice 'ok: only admins list phones';
+end $$;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000e4');
+select pg_temp.expect(
+  (select count(*) = 1 from jsonb_array_elements(public.admin_devices() -> 'by_account') d
+    where d ->> 'user_id' = '00000000-0000-0000-0000-0000000000e1' and d ->> 'device' = 'Tecno Camon 30 (Android 14)'),
+  'an account''s phone is listed with its model, and an older app version does not wipe it');
+select pg_temp.expect(
+  (select (d ->> 'phones')::int = 2 and (d ->> 'without_account')::int = 1
+     from jsonb_array_elements(public.admin_devices() -> 'models') d where d ->> 'device' = 'Tecno Camon 30 (Android 14)'),
+  'phone models are counted, guests included');
+reset role;
+select 'PASSED: devices' as result;

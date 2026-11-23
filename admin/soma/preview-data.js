@@ -134,6 +134,11 @@
   ];
 
   const rpcs = {
+    admin_devices: () => ({
+      by_account: [{ user_id: 'u1', device: 'Samsung SM-A155F (Android 15)', version: '1.1.0+3', platform: 'android', level: 'pro', first_seen: days(20), last_seen: days(0.1) },
+        { user_id: 'u1', device: 'Tecno Camon 30 (Android 14)', version: '1.0.0+1', platform: 'android', level: 'pro', first_seen: days(60), last_seen: days(9) }],
+      models: [{ device: 'Tecno Camon 30 (Android 14)', phones: 41, without_account: 19, alarms_missed: 61, last_seen: days(0.1) }, { device: 'Samsung SM-A155F (Android 15)', phones: 33, without_account: 12, alarms_missed: 8, last_seen: days(0.2) }, { device: 'Xiaomi Redmi Note 13 (Android 14)', phones: 27, without_account: 14, alarms_missed: 44, last_seen: days(0.3) }, { device: 'Not reported (older app version)', phones: 32, without_account: 20, alarms_missed: 0, last_seen: days(2) }],
+    }),
     admin_usage_stats: ({ days: n }) => {
       const wave = (i, base, swing) => Math.max(0, Math.round(base + swing * Math.sin(i / 2.3) + (i % 7 === 0 ? swing : 0)));
       const by_day = Array.from({ length: n + 1 }, (_, i) => ({ day: days(n - i).slice(0, 10), answers: wave(i, 260, 90), alarms_answered: wave(i, 58, 14), alarms_missed: wave(i, 5, 3), new_accounts: wave(i, 3, 2), new_phones: wave(i, 6, 3) }));
