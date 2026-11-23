@@ -8,54 +8,57 @@
   var calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ------------------------------------------------------ the alarm demo
+  // A copy of the app's ringing screen (lib/screens/alarm_ring_screen.dart):
+  // the same views, wording and order. The questions come from the app's
+  // question bank; an admin picks which ones ("On the home page").
   var NEEDED = 3;
-  var QUESTIONS = [
-    { topic: 'Pharmacology', text: 'First-line drug for anaphylaxis?', answer: 'Adrenaline',
-      options: ['Hydrocortisone', 'Adrenaline', 'Chlorphenamine', 'Salbutamol', 'Atropine'],
-      why: 'Intramuscular adrenaline comes first. Steroids and antihistamines act too slowly to save an airway.' },
-    { topic: 'Pathology', text: 'Reed-Sternberg cells are the hallmark of which disease?', answer: 'Hodgkin lymphoma',
-      options: ['Burkitt lymphoma', 'Chronic myeloid leukaemia', 'Hodgkin lymphoma', 'Multiple myeloma', 'Infectious mononucleosis'],
-      why: 'The large "owl-eye" Reed-Sternberg cell defines Hodgkin lymphoma.' },
-    { topic: 'Pharmacology', text: 'Antidote for paracetamol overdose?', answer: 'N-acetylcysteine', typed: true, alts: ['NAC', 'acetylcysteine'],
-      why: 'N-acetylcysteine restores glutathione, which mops up the toxic metabolite NAPQI.' },
-    { topic: 'Anatomy', text: 'Which nerve is compressed in carpal tunnel syndrome?', answer: 'Median nerve',
-      options: ['Ulnar nerve', 'Radial nerve', 'Median nerve', 'Axillary nerve', 'Musculocutaneous nerve'],
-      why: 'The median nerve runs through the carpal tunnel with the long flexor tendons.' },
-    { topic: 'Pharmacology', text: 'Which test is used to monitor warfarin?', answer: 'INR',
-      options: ['aPTT', 'Platelet count', 'Bleeding time', 'INR', 'D-dimer'],
-      why: 'Warfarin prolongs the prothrombin time, reported as the INR. The aPTT is for unfractionated heparin.' },
-    { topic: 'Biochemistry', text: 'Scurvy is caused by a lack of which vitamin?', answer: 'Vitamin C',
-      options: ['Vitamin A', 'Vitamin B1', 'Vitamin C', 'Vitamin D', 'Vitamin K'],
-      why: 'Vitamin C is needed to hydroxylate proline and lysine in collagen.' },
+  // Asked only if the bank cannot be reached.
+  var SPARE = [
+    { type: 'mcq', topic: 'General principles', text: 'First-pass metabolism of an orally administered drug takes place mainly in which organ?', answer: 'Liver',
+      options: ['Kidney', 'Liver', 'Lung', 'Stomach', 'Spleen'], alt_answers: [],
+      explanation: 'Drugs absorbed from the gut travel in the portal vein to the liver, where some are metabolised before reaching the systemic circulation.' },
+    { type: 'saq', topic: 'General principles', text: 'What term describes the fraction of an administered dose that reaches the systemic circulation unchanged?', answer: 'Bioavailability',
+      options: [], alt_answers: [], explanation: 'Bioavailability (F) is 100% for an intravenous dose and lower for other routes.' },
+    { type: 'mcq', topic: 'Cardiovascular drugs', text: 'Which test is used to monitor warfarin?', answer: 'INR',
+      options: ['aPTT', 'Platelet count', 'Bleeding time', 'INR', 'D-dimer'], alt_answers: [],
+      explanation: 'Warfarin prolongs the prothrombin time, reported as the INR. The aPTT is used for unfractionated heparin.' },
   ];
+  var ICON = {
+    check: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
+    cancel: 'M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z',
+    close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    tick: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+    arrow: 'M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z',
+  };
 
-  var screen = document.getElementById('demo');
+  var app = document.getElementById('demo');
   var body = document.getElementById('demo-body');
-  var streakBox = document.getElementById('demo-streak');
-  var clock = document.getElementById('demo-clock');
-  var streak = 0, at = 0, minute = 30, busy = false;
+  var streakText = document.getElementById('demo-streak');
+  var bar = document.getElementById('demo-bar');
+  var note = document.getElementById('demo-note');
+  var invite = document.getElementById('invite');
+  var phone = document.getElementById('demo-phone');
+  var questions = SPARE.slice(), at = 0, streak = 0, wrongRun = 0, busy = false;
 
   function el(tag, cls, text) { var x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; }
+  function svg(name) { var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); var p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', ICON[name]); s.appendChild(p); return s; }
   function squash(s) { return String(s).toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''); }
-  // How many letters apart two words are (for forgiving small typos).
+  function digits(s) { return String(s).replace(/[^0-9]/g, ''); }
   function distance(a, b) {
     var row = []; for (var j = 0; j <= b.length; j++) row[j] = j;
     for (var i = 1; i <= a.length; i++) {
       var prev = row[0]; row[0] = i;
-      for (var k = 1; k <= b.length; k++) {
-        var keep = row[k];
-        row[k] = Math.min(row[k] + 1, row[k - 1] + 1, prev + (a[i - 1] === b[k - 1] ? 0 : 1));
-        prev = keep;
-      }
+      for (var k = 1; k <= b.length; k++) { var keep = row[k]; row[k] = Math.min(row[k] + 1, row[k - 1] + 1, prev + (a[i - 1] === b[k - 1] ? 0 : 1)); prev = keep; }
     }
     return row[b.length];
   }
-  // Same idea as the app: no typos in short answers, one in medium, two in long.
+  // The app's rule in short: no typos in short answers, one in medium,
+  // two in long ones, and the digits must match exactly.
   function typedRight(given, q) {
     var mine = squash(given); if (!mine) return null;
     var best = null;
-    [q.answer].concat(q.alts || []).forEach(function (want) {
-      var target = squash(want);
+    [q.answer].concat(q.alt_answers || []).forEach(function (want) {
+      var target = squash(want); if (!target || digits(mine) !== digits(target)) return;
       var allowed = target.length <= 4 ? 0 : target.length <= 8 ? 1 : 2;
       var d = distance(mine, target);
       if (d <= allowed && (best === null || d < best.d)) best = { d: d, want: want };
@@ -63,101 +66,132 @@
     return best;
   }
 
-  function drawStreak() {
-    streakBox.textContent = '';
-    for (var i = 0; i < NEEDED; i++) streakBox.appendChild(el('i', i < streak ? 'on' : ''));
-    streakBox.setAttribute('aria-label', streak + ' of ' + NEEDED + ' right in a row');
+  function show(view) { body.textContent = ''; body.appendChild(view); }
+  function header() {
+    streakText.textContent = 'Streak: ' + streak + ' / ' + NEEDED;
+    bar.style.width = (100 * streak / NEEDED) + '%';
+    note.textContent = 'Snooze unlocks after 5 wrong in a row (' + wrongRun + ' so far)';
+    note.className = wrongRun > 0 ? 'ring-note hot' : 'ring-note';
   }
-
-  function next(delay) {
-    busy = true;
-    setTimeout(function () { busy = false; at = (at + 1) % QUESTIONS.length; ask(); }, delay);
-  }
-
-  function judge(right, q, verdict, spelling) {
-    if (right) {
-      streak++;
-      verdict.innerHTML = '';
-      verdict.appendChild(el('b', '', 'Correct. '));
-      verdict.appendChild(document.createTextNode(spelling ? 'Spelling: ' + q.answer + '.' : q.why));
-    } else {
-      streak = 0;
-      if (!calm) { screen.classList.remove('shake'); void screen.offsetWidth; screen.classList.add('shake'); }
-      verdict.innerHTML = '';
-      verdict.appendChild(el('b', 'no', 'Not that. '));
-      verdict.appendChild(document.createTextNode('It is ' + q.answer + '. ' + q.why));
-    }
-    drawStreak();
-    if (streak >= NEEDED) { busy = true; setTimeout(finish, 1100); return; }
-    next(right ? 1500 : 3600);
+  function touched() {
+    if (phone) phone.classList.remove('buzz');
   }
 
   function ask() {
-    var q = QUESTIONS[at];
-    body.textContent = '';
-    body.appendChild(el('div', 'topic', 'Topic: ' + q.topic));
-    body.appendChild(el('p', 'question', q.text));
-    var verdict = el('p', 'verdict');
-    if (q.typed) {
-      var row = el('div', 'answer-row');
-      var input = el('input'); input.type = 'text'; input.placeholder = 'Type answer…'; input.autocomplete = 'off'; input.spellcheck = false;
+    busy = false;
+    var q = questions[at % questions.length];
+    var view = el('div', 'view');
+    view.appendChild(el('div', 'q-topic', 'TOPIC: ' + String(q.topic || '').toUpperCase()));
+    view.appendChild(el('div', 'q-text', q.text));
+    if (q.type === 'mcq') {
+      (q.options || []).forEach(function (option, i) {
+        var b = el('button', 'q-opt');
+        b.appendChild(el('span', 'badge', 'ABCDE'[i] || ''));
+        b.appendChild(el('span', '', option));
+        b.onclick = function () { answer(q, option, option === q.answer, null); };
+        view.appendChild(b);
+      });
+    } else {
+      var input = el('input', 'q-input'); input.type = 'text'; input.placeholder = 'Type answer...'; input.autocomplete = 'off'; input.spellcheck = false;
       input.setAttribute('aria-label', 'Your answer');
-      var go = el('button', '', 'Submit');
+      var go = el('button', 'q-submit', 'Submit');
       var submit = function () {
-        if (busy || !input.value.trim()) return;
+        if (!input.value.trim()) return;
         var hit = typedRight(input.value, q);
-        input.disabled = true; go.disabled = true;
-        judge(!!hit, q, verdict, hit && hit.d > 0);
+        answer(q, input.value.trim(), !!hit, hit && hit.d > 0 ? 'Spelling: ' + hit.want : null);
       };
       go.onclick = submit;
       input.onkeydown = function (e) { if (e.key === 'Enter') submit(); };
-      row.appendChild(input); row.appendChild(go); body.appendChild(row);
-      verdict.textContent = 'Typed answers forgive small spelling slips. Try "n acetyl cystine".';
-    } else {
-      var list = el('div', 'options');
-      q.options.forEach(function (option) {
-        var b = el('button', '', option);
-        b.onclick = function () {
-          if (busy) return;
-          var right = option === q.answer;
-          Array.prototype.forEach.call(list.children, function (other) {
-            other.disabled = true;
-            if (other.textContent === q.answer) other.classList.add('right');
-          });
-          if (!right) b.classList.add('wrong');
-          judge(right, q, verdict, false);
-        };
-        list.appendChild(b);
-      });
-      body.appendChild(list);
+      input.onfocus = touched;
+      view.appendChild(input); view.appendChild(go);
     }
-    body.appendChild(verdict);
+    show(view);
   }
 
-  function finish() {
-    busy = false;
-    screen.classList.add('off');
-    minute += 2; clock.textContent = '05:' + minute;
-    body.textContent = '';
-    var done = el('div', 'done');
-    done.appendChild(el('div', 'big-time', '05:' + minute));
-    done.appendChild(el('h4', '', 'Alarm off. Good morning.'));
-    done.appendChild(el('p', '', NEEDED + ' right in a row. You are awake, and three questions into the day.'));
-    var again = el('button', 'again', 'Ring it again');
-    again.onclick = function () { streak = 0; minute = 30; clock.textContent = '05:30'; screen.classList.remove('off'); at = (at + 1) % QUESTIONS.length; drawStreak(); ask(); };
-    done.appendChild(again);
-    body.appendChild(done);
+  function answer(q, given, right, hint) {
+    if (busy) return;
+    busy = true; touched();
+    if (right) {
+      streak++; wrongRun = 0; header();
+      if (streak >= NEEDED) { setTimeout(done, 350); return; }
+      var ok = el('div', 'view correct');
+      ok.appendChild(svg('check'));
+      ok.appendChild(el('h4', '', 'Correct!'));
+      ok.appendChild(el('p', '', (NEEDED - streak) + ' more to go'));
+      if (hint) ok.appendChild(el('p', 'hint', hint));
+      show(ok);
+      setTimeout(function () { at++; ask(); }, hint ? 1900 : 1200);
+    } else {
+      streak = 0; wrongRun++; header();
+      if (!calm) { app.classList.remove('shake'); void app.offsetWidth; app.classList.add('shake'); }
+      var card = el('div', 'view wrong');
+      var head = el('div', 'wrong-head'); var x = svg('cancel'); x.style.fill = '#ff453a'; head.appendChild(x); head.appendChild(document.createTextNode('Not quite')); head.appendChild(el('span', '', 'Streak reset'));
+      card.appendChild(head);
+      card.appendChild(el('div', 'wrong-q', q.text));
+      var box = function (cls, icon, label, text) {
+        var b = el('div', 'abox ' + cls); var i = svg(icon); i.style.fill = 'currentColor'; b.appendChild(i);
+        var inner = el('div'); inner.appendChild(el('small', '', label)); inner.appendChild(el('div', '', text)); b.appendChild(inner); return b;
+      };
+      card.appendChild(box('no', 'close', 'YOUR ANSWER', given));
+      card.appendChild(box('yes', 'tick', 'CORRECT ANSWER', q.answer));
+      if (q.explanation) { card.appendChild(el('div', 'why-label', 'WHY')); card.appendChild(el('div', 'why', q.explanation)); }
+      var next = el('button', 'next'); next.appendChild(svg('arrow')); next.appendChild(document.createTextNode('Next question'));
+      next.onclick = function () { at++; ask(); };
+      card.appendChild(next);
+      show(card);
+      busy = false;
+    }
   }
 
-  if (screen) { drawStreak(); ask(); }
+  function done() {
+    var view = el('div', 'view done');
+    view.appendChild(svg('check'));
+    view.appendChild(el('h4', '', 'Good morning!'));
+    view.appendChild(el('p', '', 'Alarm off. It is 5:33 AM.'));
+    var again = el('button', 'next', 'Ring it again');
+    again.onclick = function () { streak = 0; wrongRun = 0; at++; header(); ringing(true); ask(); };
+    view.appendChild(again);
+    show(view);
+    ringing(false);
+  }
+  function ringing(on) {
+    if (!invite) return;
+    invite.className = on ? 'ringing' : 'ringing off';
+    invite.firstElementChild.textContent = on ? '5:30 AM. Your alarm is ringing.' : 'Alarm off. That is the whole idea.';
+    invite.lastElementChild.textContent = on ? 'Answer ' + NEEDED + ' in a row to stop it.' : 'Now imagine it at 5:30 tomorrow.';
+  }
+
+  if (app) {
+    header(); ask();
+    // Real questions from the bank replace the spare ones as soon as they arrive.
+    if (config.supabaseUrl) {
+      fetch(config.supabaseUrl + '/rest/v1/rpc/homepage_questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: config.supabaseKey, Authorization: 'Bearer ' + config.supabaseKey },
+        body: JSON.stringify({ how_many: 14 }),
+      }).then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
+        // Short ones only: the phone on the page is small.
+        var fit = (rows || []).filter(function (q) {
+          return q.text && q.answer && q.text.length <= 130 && (q.type !== 'mcq' || ((q.options || []).length === 5 && q.options.every(function (o) { return o.length <= 46; })));
+        });
+        if (fit.length >= 3 && streak === 0 && wrongRun === 0 && !busy) { questions = fit; at = 0; ask(); }
+        else if (fit.length >= 3) { questions = fit; }
+      }).catch(function () { /* the spare questions stay */ });
+    }
+  }
+
+  // Every phone gets its thickness: copies of its outline stepped back.
+  Array.prototype.forEach.call(document.querySelectorAll('.phone'), function (p) {
+    for (var z = 1; z <= 6; z++) { var e = el('i', 'edge'); e.style.transform = 'translateZ(' + (-2.2 * z) + 'px)'; p.insertBefore(e, p.firstChild); }
+  });
 
   // -------------------------------------------- phones that turn in 3D
-  var hero = document.getElementById('demo-phone');
+  var hero = phone;
   var fan = document.getElementById('fan');
   if (!calm && window.matchMedia('(pointer: fine)').matches) {
     window.addEventListener('pointermove', function (e) {
       var x = e.clientX / window.innerWidth - 0.5, y = e.clientY / window.innerHeight - 0.5;
-      if (hero) { hero.style.setProperty('--ry', (-16 + x * 14) + 'deg'); hero.style.setProperty('--rx', (7 - y * 10) + 'deg'); }
+      if (hero) { hero.style.setProperty('--ry', (-17 + x * 16) + 'deg'); hero.style.setProperty('--rx', (6 - y * 10) + 'deg'); }
       if (fan) { fan.style.setProperty('--px', (x * 12) + 'deg'); fan.style.setProperty('--py', (-y * 8) + 'deg'); }
     }, { passive: true });
   }
@@ -190,16 +224,24 @@
     button.href = r.url;
     button.removeAttribute('aria-disabled');
     button.setAttribute('download', '');
+    // The install steps, right after the download starts.
+    button.addEventListener('click', function () { var g = document.getElementById('guide'); if (g && g.showModal) setTimeout(function () { g.showModal(); }, 500); });
     button.textContent = 'Download';
     var date = new Date(r.published_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'long', year: 'numeric' });
     document.getElementById('release-line').textContent = 'Version ' + r.version + ' · ' + date + (r.size_mb ? ' · ' + Math.round(r.size_mb) + ' MB' : '') + ' · Android 8 and later';
     if (r.notes) document.getElementById('release-notes').textContent = 'New in this version: ' + r.notes;
     hint.textContent = 'An install file (APK). Steps below.';
     var heroLine = document.getElementById('hero-version');
-    if (heroLine) heroLine.textContent = 'Free to start. No account needed for your first three alarms. Version ' + r.version + '.';
+    if (heroLine) heroLine.textContent = 'Free to start. Your first three alarms need no account. Version ' + r.version + '.';
   }).catch(function () {
     hint.innerHTML = 'The download is not up yet. Ask us for the file on <a href="https://wa.me/254702797977">WhatsApp</a>.';
   });
+
+  var guide = document.getElementById('guide');
+  if (guide) {
+    ['guide-close', 'guide-ok', 'guide-more'].forEach(function (id) { var b = document.getElementById(id); if (b) b.addEventListener('click', function () { guide.close(); }); });
+    guide.addEventListener('click', function (e) { if (e.target === guide) guide.close(); });
+  }
 
   // The paid plans, as the owner has them set right now.
   Promise.all([

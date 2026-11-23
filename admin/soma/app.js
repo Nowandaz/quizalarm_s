@@ -549,7 +549,19 @@ function questionCard(topic, x, number) {
         x.deleted_at ? h('span', { class: 'pill bad' }, 'Deleted')
           : x.status === 'draft' ? h('span', { class: 'pill' }, 'Draft') : h('span', { class: 'pill ok' }, 'Published'),
         x.source === 'ai' && h('span', { class: 'pill accent' }, 'AI'),
-        x.image_path && h('span', { class: 'pill accent' }, 'Picture')),
+        x.image_path && h('span', { class: 'pill accent' }, 'Picture'),
+        // Whether the alarm demo on the website's front page may ask it.
+        !x.deleted_at && x.status !== 'draft' && !x.image_path && h('button', {
+          class: x.on_homepage ? 'chip on' : 'chip', style: 'margin-left:auto',
+          title: 'The alarm demo on the home page asks the questions switched on here. Their answers become public.',
+          onclick: async (e) => {
+            e.stopPropagation();
+            const now = !x.on_homepage;
+            const done = await attempt(async () => ok(await db.from('questions').update({ on_homepage: now }).eq('id', x.id).select()),
+              now ? 'The home page demo will ask this one' : 'Taken off the home page');
+            if (done) { x.on_homepage = now; e.target.className = now ? 'chip on' : 'chip'; e.target.textContent = now ? 'On the home page' : 'Put on the home page'; }
+          },
+        }, x.on_homepage ? 'On the home page' : 'Put on the home page')),
       h('div', { class: 'text' }, x.text),
       x.type === 'mcq'
         ? h('div', { class: 'opts' }, (x.options || []).map((o, i) => h('div', { class: o === x.answer ? 'opt right-answer' : 'opt' }, h('b', {}, 'ABCDE'[i] || ''), o)))

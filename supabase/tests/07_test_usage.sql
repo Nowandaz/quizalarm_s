@@ -154,3 +154,20 @@ select pg_temp.act_as(null);
 select pg_temp.expect((select count(*) from public.app_releases) = 1, 'anyone can read the releases');
 reset role;
 select 'PASSED: releases' as result;
+
+-- Home page questions (part 18).
+select pg_temp.act_as(null);
+select pg_temp.expect(
+  (select jsonb_array_length(public.homepage_questions()) between 1 and 12
+     and bool_and(q ->> 'topic' = 'Starter') from jsonb_array_elements(public.homepage_questions(30)) q),
+  'with nothing picked, the home page gets starter-topic questions');
+reset role;
+update public.questions set on_homepage = true where id in ('tp-01', 'tp-02');
+update public.questions set on_homepage = true, status = 'draft' where id = 'tp-03';
+select pg_temp.act_as(null);
+select pg_temp.expect(
+  (select jsonb_array_length(public.homepage_questions()) = 2
+     and bool_and(q ->> 'topic' = 'Rest' and q ? 'answer') from jsonb_array_elements(public.homepage_questions()) q),
+  'picked questions are served, with their answers, and drafts are not');
+reset role;
+select 'PASSED: home page questions' as result;
