@@ -100,3 +100,18 @@ update public.questions set topic_id = 'tf' where id = 'cnt-2';
 select pg_temp.expect((select question_count from public.topics where id = 'td') = 12
   and (select question_count from public.topics where id = 'tf') = 13, 'moving a question updates both topics');
 select 'PASSED: question counts' as result;
+
+-- Announcements (part 22).
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000e1');
+do $$
+begin
+  insert into public.announcements (title) values ('Hacked');
+  raise exception 'FAILED: a user posted an announcement';
+exception when insufficient_privilege then raise notice 'ok: a user cannot post an announcement';
+end $$;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000e4');
+insert into public.announcements (title, body, audience) values ('Pharmacology topics uploaded', 'Open Banks to see them.', 'all');
+select pg_temp.act_as(null);
+select pg_temp.expect((select count(*) from public.announcements where title like 'Pharmacology%') = 1, 'anyone can read announcements');
+reset role;
+select 'PASSED: announcements' as result;

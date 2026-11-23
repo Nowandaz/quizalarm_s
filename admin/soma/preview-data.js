@@ -24,6 +24,7 @@
       { id: 'pathology-spotters', section_id: 'pathology-sec-blood-film', unit_id: 'pathology', name: 'Spotters', access: 'paid', sort_order: 0, deleted_at: null },
     ],
     questions: [],
+    announcements: [{ id: 2, title: 'Pharmacology topics uploaded', body: 'Autonomic nervous system and Autacoids now have questions. Open Banks to practise.', audience: 'all', link: '', published_at: days(0.2), expires_at: null }, { id: 1, title: 'Pro is 20% off this week', body: 'Use the code EXAMS when you upgrade.', audience: 'free', link: '', published_at: days(9), expires_at: days(2) }],
     sections: [
       { id: 'pharmacology-sec-ans', unit_id: 'pharmacology', parent_id: null, kind: 'section', name: 'Autonomic nervous system', description: '', sort_order: 0, deleted_at: null },
       { id: 'pharmacology-sec-antimicrobials', unit_id: 'pharmacology', parent_id: null, kind: 'section', name: 'Antimicrobials', description: '', sort_order: 1, deleted_at: null },

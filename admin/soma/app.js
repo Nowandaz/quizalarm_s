@@ -57,6 +57,7 @@ const ICONS = {
   alarm: 'M12 21a8 8 0 100-16 8 8 0 000 16M12 9v4l2.5 2M5 3L2 6M19 3l3 3',
   card: 'M3 6h18v12H3zM3 10h18M7 15h4',
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  bell: 'M6 16V11a6 6 0 0112 0v5l2 2H4zM10 20a2 2 0 004 0',
   chart: 'M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3',
   lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3',
 };
@@ -290,6 +291,7 @@ function renderShell() {
         link('stats', 'Statistics', 'chart'),
         link('bank', 'Question bank', 'book'),
         link('flags', 'Flagged questions', 'flag'),
+        link('messages', 'Messages to users', 'bell'),
         link('alarms', 'Alarm reports', 'alarm'),
         isOwner() && link('users', 'Accounts', 'users'),
         isOwner() && link('payments', 'Payments', 'card'),
@@ -307,6 +309,7 @@ function renderShell() {
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
     stats: () => pageStats(main),
     flags: () => pageFlags(main),
+    messages: () => pageMessages(main),
     alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
     payments: () => (isOwner() ? pagePayments(main) : pageDashboard(main)),
@@ -1232,6 +1235,60 @@ async function pageUsers(main) {
     h('div', { class: 'card table-wrap', style: 'padding:6px' },
       h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Account'), h('th', {}, 'Role'), h('th', {}, 'Plan'), h('th', {}, 'Phone'), h('th', {}, 'Joined'), h('th', {}, 'Last sign-in'), h('th', {}, 'Answers'), h('th', {}, 'AI calls'), h('th', {}))), body)));
   await load();
+}
+
+// ------------------------------------------------------- messages to users
+
+const AUDIENCES = { all: 'Everyone', guest: 'People without an account', free: 'Free accounts', paid: 'Pro and Ultra' };
+
+// Short messages that appear in the app: as a notification, as a banner on
+// the first screen, and in the app's Messages list.
+async function pageMessages(main) {
+  const rows = ok(await db.from('announcements').select('*').order('published_at', { ascending: false }));
+  const over = (r) => r.expires_at && new Date(r.expires_at) < new Date();
+  fill(main,
+    pageHead('Messages to users', 'A short message shows in the app as a notification and a banner, and stays in its Messages list.',
+      h('button', { class: 'primary', onclick: () => messageDialog(null) }, icon('plus'), 'New message')),
+    h('div', { class: 'card', style: 'margin-bottom:12px' },
+      h('p', { class: 'small muted', style: 'margin:0' }, 'A phone receives a message the next time the app is opened or an alarm rings on it, so most people see it within a day, not instantly. Phones on older versions of the app do not get messages.')),
+    rows.length === 0 && h('div', { class: 'card center muted' }, 'No message has been sent yet.'),
+    h('div', { class: 'list' }, rows.map((r) => h('div', { class: over(r) ? 'card gone' : 'card' },
+      h('div', { class: 'row' },
+        h('div', { class: 'grow' },
+          h('div', { class: 'row' }, h('h3', {}, r.title), h('span', { class: 'pill' }, AUDIENCES[r.audience] || r.audience), over(r) && h('span', { class: 'pill' }, 'No longer shown')),
+          r.body && h('p', { style: 'margin:6px 0 0' }, r.body),
+          h('div', { class: 'muted small', style: 'margin-top:6px' }, `Sent ${when(r.published_at)}`, r.expires_at && ` · shown until ${when(r.expires_at)}`, r.link && [' · opens ', h('a', { href: r.link, target: '_blank', rel: 'noopener' }, r.link)])),
+        h('button', { onclick: () => messageDialog(r) }, icon('edit'), 'Edit'))))));
+}
+
+function messageDialog(message) {
+  const m = message || { title: '', body: '', audience: 'all', link: '', expires_at: null };
+  const title = h('input', { type: 'text', maxlength: 70, value: m.title, placeholder: 'Pharmacology topics uploaded' });
+  const body = h('textarea', { maxlength: 400 }, m.body);
+  const audience = h('select', {}, Object.entries(AUDIENCES).map(([value, text]) => h('option', { value, selected: value === m.audience }, text)));
+  const link = h('input', { type: 'url', value: m.link, placeholder: 'https://' });
+  const until = h('input', { type: 'date', value: m.expires_at ? m.expires_at.slice(0, 10) : '' });
+  dialog((close) => [
+    h('h2', {}, message ? 'Edit message' : 'New message'),
+    field('Title', title, 'Up to 70 letters. This is the notification\'s heading.'),
+    field('Message', body, 'One or two sentences.'),
+    field('Who gets it', audience),
+    field('Opens a web page', link, 'Optional. A button in the app opens this address.'),
+    field('Show until', until, 'Optional. After this day the app stops showing it.'),
+    message && h('p', { class: 'muted small' }, 'Editing changes what people see in the app\'s list. Phones that already showed the notification are not notified again.'),
+    h('div', { class: 'row' },
+      message && h('button', { class: 'danger', onclick: () => { close(); confirmDialog('Delete this message?', 'It disappears from the app at its next check.', 'Delete', async () => { await attempt(async () => ok(await db.from('announcements').delete().eq('id', message.id)), 'Deleted'); render(); }); } }, 'Delete'),
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        if (!title.value.trim()) { toast('Give the message a title', true); return; }
+        if (link.value.trim() && !/^https:\/\//.test(link.value.trim())) { toast('The address must start with https://', true); return; }
+        const row = { title: title.value.trim(), body: body.value.trim(), audience: audience.value, link: link.value.trim(), expires_at: until.value ? new Date(`${until.value}T23:59:59`).toISOString() : null };
+        const saved = await attempt(async () => (message
+          ? ok(await db.from('announcements').update(row).eq('id', message.id).select())
+          : ok(await db.from('announcements').insert(row).select())), message ? 'Saved' : 'Sent');
+        if (saved) { close(); render(); }
+      } }, message ? 'Save' : 'Send')),
+  ]);
 }
 
 // ------------------------------------------------------------ app versions
