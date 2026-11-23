@@ -89,6 +89,8 @@ supabase/migrations/   the database, in order:
   0013_avatars_storage.sql  private storage for profile pictures
   0014_usage_stats.sql   anonymous phone count and the Statistics page
   0015_install_devices.sql  the phone's make and model, per account and per model
+  0016_one_row_per_phone.sql  a reinstalled app counts as the same phone
+  0017_app_releases.sql  versions of the app for the home page and update notices
   0016_one_row_per_phone.sql  a reinstalled app is the same phone, not a new one
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL
