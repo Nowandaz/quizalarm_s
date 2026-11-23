@@ -94,6 +94,8 @@ supabase/migrations/   the database, in order:
   0018_homepage_questions.sql  the questions the home page's alarm demo asks
   0019_homepage_spotters.sql  picture questions in that demo too
   0020_sections.sql      units get sub units and sections
+  0021_topic_question_count.sql  each topic knows how many published questions it has
+supabase/outlines/     the outline of a unit (sections and topics), as SQL
   0016_one_row_per_phone.sql  a reinstalled app is the same phone, not a new one
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL

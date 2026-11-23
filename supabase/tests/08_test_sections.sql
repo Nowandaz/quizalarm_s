@@ -86,3 +86,17 @@ select pg_temp.expect((select count(*) from public.questions where topic_id = 't
   'a starter topic stays open to guests after being moved');
 reset role;
 select 'PASSED: sections' as result;
+
+-- The number of published questions a topic has (part 21).
+select pg_temp.expect((select question_count from public.topics where id = 'tf') = 12,
+  'a topic knows how many published questions it has');
+insert into public.questions (id, topic_id, type, text, answer) values ('cnt-1', 'td', 'saq', 'Counted?', 'Yes');
+insert into public.questions (id, topic_id, type, text, answer, status) values ('cnt-2', 'td', 'saq', 'Draft?', 'Yes', 'draft');
+select pg_temp.expect((select question_count from public.topics where id = 'td') = 13, 'adding a published question raises it; a draft does not');
+update public.questions set status = 'published' where id = 'cnt-2';
+update public.questions set deleted_at = now() where id = 'cnt-1';
+select pg_temp.expect((select question_count from public.topics where id = 'td') = 13, 'publishing adds one and deleting takes one away');
+update public.questions set topic_id = 'tf' where id = 'cnt-2';
+select pg_temp.expect((select question_count from public.topics where id = 'td') = 12
+  and (select question_count from public.topics where id = 'tf') = 13, 'moving a question updates both topics');
+select 'PASSED: question counts' as result;
