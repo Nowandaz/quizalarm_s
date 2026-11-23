@@ -426,32 +426,133 @@ async function pageUnit(main, unitId) {
   const unit = ok(await db.from('units').select('*').eq('id', unitId))[0];
   if (!unit) { fill(main, h('p', {}, 'That unit does not exist.')); return; }
   const topics = ok(await db.from('topics').select('*').eq('unit_id', unitId).order('sort_order').order('name'));
+  const sections = ok(await db.from('sections').select('*').eq('unit_id', unitId).is('deleted_at', null).order('sort_order').order('name'));
   const questions = ok(await db.from('questions').select('id, topic_id, status, image_path, deleted_at').in('topic_id', topics.map((t) => t.id).concat('-')));
   const of = (topicId) => questions.filter((q) => q.topic_id === topicId && !q.deleted_at);
   const most = Math.max(1, ...topics.map((t) => of(t.id).length));
+  const subunits = sections.filter((x) => x.kind === 'subunit');
+  const plain = sections.filter((x) => x.kind === 'section');
+  const known = new Set(plain.map((x) => x.id));
+  const topicsIn = (sectionId) => topics.filter((t) => t.section_id === sectionId);
+  const loose = topics.filter((t) => !t.section_id || !known.has(t.section_id));
+  const count = (list) => list.reduce((n, t) => n + of(t.id).length, 0);
 
-  fill(main, 
+  const topicRow = (t) => {
+    const qs = of(t.id);
+    const drafts = qs.filter((q) => q.status === 'draft').length;
+    return h('div', { class: t.deleted_at ? 'card click gone' : 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(unit.id)}/${encodeURIComponent(t.id)}`; } },
+      h('div', { class: 'row spread' },
+        h('h3', {}, t.name, t.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted')),
+        h('div', { class: 'row small' },
+          accessPill(t.access),
+          h('span', {}, h('b', {}, qs.length), ' questions'),
+          drafts > 0 && h('span', { class: 'pill' }, `${drafts} draft${drafts === 1 ? '' : 's'}`),
+          qs.some((q) => q.image_path) && h('span', { class: 'pill accent' }, 'Pictures'),
+          h('button', { class: 'icon-btn', title: 'Edit topic', onclick: (e) => { e.stopPropagation(); topicDialog(unit, t, 0, plain, subunits); } }, icon('edit')))),
+      h('div', { class: 'bar', style: 'margin-top:10px', title: 'Share of this unit\'s questions' }, h('i', { style: `width:${Math.round(100 * qs.length / most)}%` })));
+  };
+  const sectionBlock = (x) => {
+    const mine = topicsIn(x.id);
+    return h('div', { class: 'tree-section' },
+      h('div', { class: 'row spread tree-head' },
+        h('div', {}, h('h3', {}, x.name), h('div', { class: 'muted small' }, `Section · ${mine.length} topic${mine.length === 1 ? '' : 's'} · ${count(mine)} questions`, x.description ? ` · ${x.description}` : '')),
+        h('div', { class: 'row' },
+          h('button', { onclick: () => topicDialog(unit, null, mine.length, plain, subunits, x.id) }, icon('plus'), 'Topic'),
+          h('button', { class: 'icon-btn', title: 'Move this section', onclick: () => moveSectionDialog(unit, x) }, icon('layers')),
+          h('button', { class: 'icon-btn', title: 'Edit section', onclick: () => sectionDialog(unit, x, subunits, mine.length) }, icon('edit')))),
+      mine.length === 0 ? h('div', { class: 'muted small', style: 'padding:6px 2px 10px' }, 'No topics in this section yet.') : h('div', { class: 'list' }, mine.map(topicRow)));
+  };
+
+  fill(main,
     h('div', { class: 'crumbs' }, h('a', { href: '#/bank' }, 'Question bank'), ' / ', unit.name),
     pageHead(unit.name,
       unit.description || 'No description.',
       h('button', { onclick: () => exportUnit(unit) }, icon('download'), 'Export'),
       h('button', { onclick: () => unitDialog(unit) }, icon('edit'), 'Edit unit'),
-      h('button', { class: 'primary', onclick: () => topicDialog(unit, null, topics.length) }, icon('plus'), 'Add topic')),
-    topics.length === 0 && h('div', { class: 'card center muted' }, 'No topics yet.'),
-    h('div', { class: 'list' }, topics.map((t) => {
-      const qs = of(t.id);
-      const drafts = qs.filter((q) => q.status === 'draft').length;
-      return h('div', { class: t.deleted_at ? 'card click gone' : 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(unit.id)}/${encodeURIComponent(t.id)}`; } },
-        h('div', { class: 'row spread' },
-          h('h3', {}, t.name, t.deleted_at && h('span', { class: 'pill bad', style: 'margin-left:8px' }, 'Deleted')),
-          h('div', { class: 'row small' },
-            accessPill(t.access),
-            h('span', {}, h('b', {}, qs.length), ' questions'),
-            drafts > 0 && h('span', { class: 'pill' }, `${drafts} draft${drafts === 1 ? '' : 's'}`),
-            qs.some((q) => q.image_path) && h('span', { class: 'pill accent' }, 'Pictures'),
-            h('button', { class: 'icon-btn', title: 'Edit topic', onclick: (e) => { e.stopPropagation(); topicDialog(unit, t); } }, icon('edit')))),
-        h('div', { class: 'bar', style: 'margin-top:10px', title: 'Share of this unit\'s questions' }, h('i', { style: `width:${Math.round(100 * qs.length / most)}%` })));
-    })));
+      h('button', { onclick: () => sectionDialog(unit, { kind: 'subunit', sort_order: subunits.length }, subunits, 0) }, icon('plus'), 'Sub unit'),
+      h('button', { class: 'primary', onclick: () => sectionDialog(unit, { kind: 'section', sort_order: plain.length }, subunits, 0) }, icon('plus'), 'Section')),
+    h('p', { class: 'muted small', style: 'margin:-6px 0 14px' }, 'A unit holds sections, and each section holds topics with their questions. Large units can group their sections into sub units (Pathology: Haematology, Immunology...).'),
+    sections.length === 0 && topics.length === 0 && h('div', { class: 'card center muted' }, 'Nothing here yet. Start with a section.'),
+    subunits.map((sub) => {
+      const inside = plain.filter((x) => x.parent_id === sub.id);
+      const all = inside.flatMap((x) => topicsIn(x.id));
+      return h('div', { class: 'tree-subunit' },
+        h('div', { class: 'row spread tree-head' },
+          h('div', {}, h('h2', { style: 'margin:0' }, sub.name), h('div', { class: 'muted small' }, `Sub unit · ${inside.length} section${inside.length === 1 ? '' : 's'} · ${all.length} topics · ${count(all)} questions`)),
+          h('div', { class: 'row' },
+            h('button', { onclick: () => sectionDialog(unit, { kind: 'section', parent_id: sub.id, sort_order: inside.length }, subunits, 0) }, icon('plus'), 'Section'),
+            h('button', { class: 'icon-btn', title: 'Move this sub unit to another unit', onclick: () => moveSectionDialog(unit, sub) }, icon('layers')),
+            h('button', { class: 'icon-btn', title: 'Edit sub unit', onclick: () => sectionDialog(unit, sub, subunits, inside.length) }, icon('edit')))),
+        inside.length === 0 ? h('div', { class: 'muted small', style: 'padding:4px 2px 8px' }, 'No sections in this sub unit yet.') : inside.map(sectionBlock));
+    }),
+    plain.filter((x) => !x.parent_id).map(sectionBlock),
+    loose.length > 0 && h('div', { class: 'tree-section' },
+      h('div', { class: 'tree-head' }, h('h3', {}, 'Not filed in a section'), h('div', { class: 'muted small' }, 'Open a topic\'s edit dialog to file it. The app shows these as "Other topics".')),
+      h('div', { class: 'list' }, loose.map(topicRow))));
+}
+
+// A sub unit or a section: add, rename, reorder, delete.
+function sectionDialog(unit, section, subunits, holds) {
+  const isNew = !section.id;
+  const sub = section.kind === 'subunit';
+  const word = sub ? 'sub unit' : 'section';
+  const name = h('input', { type: 'text', value: section.name || '' });
+  const description = h('input', { type: 'text', value: section.description || '' });
+  const order = h('input', { type: 'number', value: section.sort_order || 0 });
+  const parent = h('select', {}, h('option', { value: '', selected: !section.parent_id }, `Directly in ${unit.name}`),
+    subunits.map((x) => h('option', { value: x.id, selected: section.parent_id === x.id }, `In ${x.name}`)));
+  dialog((close) => [
+    h('h2', {}, isNew ? `Add a ${word} to ${unit.name}` : `Edit ${word}`),
+    field('Name', name, sub ? 'For example Haematology.' : 'For example Autonomic nervous system.'),
+    field('Description', description, 'Optional. One line.'),
+    !sub && subunits.length > 0 && field('Where', parent),
+    field('Order', order, 'Lower numbers come first in the app.'),
+    h('div', { class: 'row' },
+      !isNew && h('button', { class: 'danger', onclick: () => {
+        if (holds > 0) { toast(sub ? 'Move or delete its sections first' : 'Move or delete its topics first', true); return; }
+        close();
+        confirmDialog(`Delete "${section.name}"?`, `The ${word} disappears from the app at its next sync.`, 'Delete', async () => {
+          await attempt(async () => ok(await db.from('sections').update({ deleted_at: new Date().toISOString() }).eq('id', section.id)), 'Deleted'); render();
+        });
+      } }, 'Delete'),
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        if (!name.value.trim()) { toast('Give it a name', true); return; }
+        const row = { name: name.value.trim(), description: description.value.trim(), sort_order: Number(order.value) || 0 };
+        if (!sub) row.parent_id = parent.value || null;
+        const saved = await attempt(async () => {
+          if (!isNew) return ok(await db.from('sections').update(row).eq('id', section.id).select());
+          const id = await freeId('sections', `${unit.id}-${sub ? 'sub' : 'sec'}-${slug(row.name)}`);
+          return ok(await db.from('sections').insert({ id, unit_id: unit.id, kind: section.kind, ...row }).select());
+        }, 'Saved');
+        if (saved) { close(); render(); }
+      } }, 'Save')),
+  ]);
+}
+
+// Moves a section (or a whole sub unit) to another unit, with everything in it.
+async function moveSectionDialog(unit, section) {
+  const sub = section.kind === 'subunit';
+  const units = ok(await db.from('units').select('id, name').is('deleted_at', null).order('sort_order'));
+  const allSubs = ok(await db.from('sections').select('id, unit_id, name').eq('kind', 'subunit').is('deleted_at', null).order('name'));
+  const toUnit = h('select', {}, units.map((u) => h('option', { value: u.id, selected: u.id === unit.id }, u.name)));
+  const toParent = h('select', {});
+  const fillParents = () => fill(toParent, h('option', { value: '' }, 'Directly in the unit'),
+    allSubs.filter((x) => x.unit_id === toUnit.value).map((x) => h('option', { value: x.id, selected: x.id === section.parent_id }, `In ${x.name}`)));
+  toUnit.addEventListener('change', fillParents);
+  fillParents();
+  dialog((close) => [
+    h('h2', {}, `Move "${section.name}"`),
+    h('p', { class: 'muted small' }, sub ? 'Its sections, topics and questions move with it.' : 'Its topics and questions move with it.'),
+    field('To unit', toUnit),
+    !sub && field('Where', toParent),
+    h('div', { class: 'row' },
+      h('button', { class: 'right', onclick: close }, 'Cancel'),
+      h('button', { class: 'primary', onclick: async () => {
+        const done = await attempt(async () => ok(await db.rpc('admin_move_section', { section: section.id, to_unit: toUnit.value, to_parent: sub ? null : (toParent.value || null) })), 'Moved');
+        if (done !== undefined) { close(); if (toUnit.value !== unit.id) location.hash = `#/bank/${encodeURIComponent(toUnit.value)}`; else render(); }
+      } }, 'Move')),
+  ]);
 }
 
 // Who gets a topic's questions. The names of all topics show to everyone
@@ -466,14 +567,19 @@ function accessPill(access) {
   return h('span', { class: access === 'paid' || !ACCESS[access] ? 'pill accent' : 'pill ok', title: (ACCESS[access] || ACCESS.paid)[1] }, label);
 }
 
-function topicDialog(unit, topic, nextOrder = 0) {
+function topicDialog(unit, topic, nextOrder = 0, sections = [], subunits = [], inSection = null) {
   const name = h('input', { type: 'text', value: topic ? topic.name : '' });
   const order = h('input', { type: 'number', value: topic ? topic.sort_order : nextOrder });
   const current = (topic && topic.access) || 'paid';
   const access = h('select', {}, Object.entries(ACCESS).map(([value, [, text]]) => h('option', { value, selected: value === current }, text)));
+  const filed = topic ? topic.section_id : inSection;
+  const label = (x) => { const up = subunits.find((u) => u.id === x.parent_id); return up ? `${up.name} / ${x.name}` : x.name; };
+  const section = h('select', {}, h('option', { value: '', selected: !filed }, 'Not filed'),
+    sections.map((x) => h('option', { value: x.id, selected: x.id === filed }, label(x))));
   dialog((close) => [
     h('h2', {}, topic ? 'Edit topic' : `Add a topic to ${unit.name}`),
     field('Name', name),
+    sections.length > 0 && field('Section', section, 'Where the topic sits in the unit.'),
     field('Order', order),
     field('Who can use it', access, 'Without a paid plan, people get only the first 10 questions of a topic that is open to them. Paid plans get every question of every topic.'),
     h('div', { class: 'row' },
@@ -484,6 +590,7 @@ function topicDialog(unit, topic, nextOrder = 0) {
       h('button', { class: 'primary', onclick: async () => {
         if (!name.value.trim()) { toast('Give the topic a name', true); return; }
         const row = { name: name.value.trim(), sort_order: Number(order.value) || 0, access: access.value };
+        if (sections.length > 0) row.section_id = section.value || null;
         const saved = await attempt(async () => {
           if (topic) return ok(await db.from('topics').update(row).eq('id', topic.id).select());
           return ok(await db.from('topics').insert({ id: await freeId('topics', `${unit.id}-${slug(row.name)}`), unit_id: unit.id, ...row }).select());

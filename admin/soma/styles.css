@@ -199,3 +199,10 @@ tr.click { cursor: pointer; }
 /* The logo beside the name. */
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand img { flex: none; }
+
+/* The unit page: sub units, sections and their topics. */
+.tree-subunit { border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-bottom: 16px; }
+.tree-section { border-left: 2px solid var(--line); padding: 2px 0 6px 14px; margin: 0 0 16px; }
+.tree-subunit .tree-section:last-child { margin-bottom: 4px; }
+.tree-head { margin-bottom: 10px; gap: 12px; }
+.tree-head h3 { margin: 0; }

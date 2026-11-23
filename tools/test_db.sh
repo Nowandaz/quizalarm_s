@@ -33,6 +33,7 @@ run supabase/migrations/0016_one_row_per_phone.sql
 run supabase/migrations/0017_app_releases.sql
 run supabase/migrations/0018_homepage_questions.sql
 run supabase/migrations/0019_homepage_spotters.sql
+run supabase/migrations/0020_sections.sql
 $PSQL -q -d "$DB" -c "grant all on all tables in schema public to service_role;
                       grant usage, select on all sequences in schema public to service_role, authenticated;"
 if [ -f supabase/seed.sql ]; then
