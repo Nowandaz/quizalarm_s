@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Brain O' Clock: the alarm you answer</title>
+  <title>Brain O' Clock: the alarm you can't snooze your way out of</title>
   <meta name="description" content="An Android alarm for medical students that only stops when you answer revision questions. Download it here.">
   <meta property="og:title" content="Brain O' Clock: the alarm you answer">
   <meta property="og:description" content="An alarm that only stops when you answer revision questions. Built for medical students.">
@@ -11,7 +11,8 @@
   <meta name="theme-color" content="#05060a">
   <link rel="icon" href="brand/favicon.png">
   <link rel="preload" href="brand/Outfit.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="site.css?v=1">
+  <link rel="preload" href="brand/PlusJakartaSans.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="site.css?v=2">
 </head>
 <body>
 
@@ -31,32 +32,41 @@
   <!-- ------------------------------------------------------------ hero -->
   <section class="hero">
     <div class="hero-copy">
-      <p class="kicker">For medical students · Android</p>
-      <h1>The alarm that asks you a question <em>before</em> it lets you sleep in.</h1>
-      <p class="lede">Brain O' Clock rings like any alarm. The difference is the off button: there isn't one.
-        It stops when you get enough revision questions right in a row. By then you are awake,
-        and you have already done the first few minutes of today's reading.</p>
+      <p class="kicker">Android app for medical students</p>
+      <h1>The alarm you can't snooze your way out of.</h1>
+      <p class="lede">Brain O' Clock keeps ringing until you answer revision questions correctly.
+        No off button. No easy snooze. You are up, and your first questions of the day are already done.</p>
       <div class="hero-actions">
-        <a class="cta" href="#download">Download for Android</a>
-        <a class="ghost" href="#try">Try the alarm on this page</a>
+        <a class="cta" href="#download">Download free</a>
+        <a class="ghost" href="#how">See how it works</a>
       </div>
-      <p class="fine" id="hero-version">Free to start. No account needed for your first three alarms.</p>
+      <p class="fine" id="hero-version">Free to start. Your first three alarms need no account.</p>
     </div>
 
-    <!-- The phone: a working copy of the ringing screen. -->
-    <div class="stage" id="try" aria-label="A working demo of the alarm screen">
-      <div class="phone tilt" id="demo-phone">
-        <div class="phone-side"></div>
-        <div class="screen" id="demo">
-          <div class="statusbar"><span id="demo-clock">05:30</span><span class="bars"><i></i><i></i><i></i></span></div>
-          <div class="ring-head">
-            <div class="ring-label"><span class="bell" aria-hidden="true"></span>Morning alarm</div>
-            <div class="streak" id="demo-streak" aria-live="polite"></div>
+    <!-- The phone: the app's own alarm screen, working. -->
+    <div class="stage" id="try" aria-label="A working copy of the app's alarm screen">
+      <div class="ringing" id="invite">
+        <b>5:30 AM. Your alarm is ringing.</b>
+        <span>Answer 3 in a row to stop it.</span>
+      </div>
+      <div class="phone tilt buzz" id="demo-phone" style="--n: 330">
+        <div class="glass">
+          <div class="app" id="demo">
+            <div class="status"><span>5:30</span><i class="cam"></i><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+            <div class="ring">
+              <div class="ring-top">
+                <span class="ring-name"><svg viewBox="0 0 24 24"><path d="M7.58 4.08L6.15 2.65C3.75 4.48 2.17 7.3 2.03 10.5h2c.15-2.65 1.51-4.97 3.55-6.42zm12.39 6.42h2c-.15-3.2-1.73-6.02-4.12-7.85l-1.42 1.43c2.02 1.45 3.39 3.77 3.54 6.42zM18 11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2v-5zm-6 11c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2z"/></svg>Morning alarm</span>
+                <span class="ring-time">5:30 AM</span>
+              </div>
+              <div class="ring-streak"><svg viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z"/></svg><span id="demo-streak">Streak: 0 / 3</span></div>
+              <div class="ring-bar"><i id="demo-bar"></i></div>
+              <div class="ring-note" id="demo-note">Snooze unlocks after 5 wrong in a row (0 so far)</div>
+              <div class="ring-body" id="demo-body"></div>
+            </div>
           </div>
-          <div class="ring-body" id="demo-body"></div>
         </div>
       </div>
-      <p class="stage-note">This one is live. Get three right in a row to switch it off.</p>
+      <p class="stage-note" id="stage-note">Questions from the app's own question bank.</p>
     </div>
   </section>
 
@@ -102,7 +112,6 @@
   <section class="showcase" id="inside">
     <div class="showcase-copy">
       <h2>Inside the app</h2>
-      <p>These are real screens, not drawings. Move your pointer, or scroll, and they turn.</p>
       <ul class="points">
         <li><b>Alarms</b> that say exactly when they will ring next, and warn you if a phone setting could stop them.</li>
         <li><b>A question bank</b> by unit and topic, with your progress on each. Add your own topics too.</li>
@@ -111,17 +120,17 @@
       </ul>
     </div>
     <div class="fan" id="fan">
-      <figure class="phone shot s1"><div class="phone-side"></div><img src="shots/bank.webp" alt="The question bank: a unit with its topics and progress" loading="lazy" width="309" height="669"></figure>
-      <figure class="phone shot s2"><div class="phone-side"></div><img src="shots/alarms.webp" alt="The Alarms tab with one alarm set for 7:00 AM" loading="lazy" width="309" height="669"></figure>
-      <figure class="phone shot s3"><div class="phone-side"></div><img src="shots/topic.webp" alt="A topic's questions, ready to practise" loading="lazy" width="309" height="669"></figure>
+      <figure class="phone shot s1" style="--n: 262"><div class="glass"><div class="app"><div class="status"><span>1:49</span><i class="cam"></i><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div><img src="shots/bank.webp" alt="The question bank: a unit with its topics and progress" loading="lazy" width="412" height="892"></div></div></figure>
+      <figure class="phone shot s2" style="--n: 262"><div class="glass"><div class="app"><div class="status"><span>1:49</span><i class="cam"></i><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div><img src="shots/alarms.webp" alt="The Alarms tab with one alarm set for 7:00 AM" loading="lazy" width="412" height="892"></div></div></figure>
+      <figure class="phone shot s3" style="--n: 262"><div class="glass"><div class="app"><div class="status"><span>1:49</span><i class="cam"></i><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div><img src="shots/topic.webp" alt="A topic's questions, ready to practise" loading="lazy" width="412" height="892"></div></div></figure>
     </div>
   </section>
 
   <!-- ------------------------------------------------------------- plans -->
   <section class="band" id="plans">
-    <h2>What it costs</h2>
-    <p class="section-lede">Start free. Pay only if you want the whole question bank and the AI tutor.
-      Payment is by M-Pesa or card inside the app, for a fixed time. Nothing renews by itself.</p>
+    <h2>Start free. Go Pro when you're ready.</h2>
+    <p class="section-lede">Three alarms and the starter topics cost nothing. Pro opens the whole question bank,
+      the AI tutor and your full stats. Pay with M-Pesa or card, right in the app.</p>
     <div class="plans" id="plan-list">
       <article class="plan">
         <h3>No account</h3>
@@ -160,7 +169,7 @@
         <p class="fine" id="download-hint">Looking for the latest version…</p>
       </div>
     </div>
-    <p class="fine center">Not on the Play Store yet, so your phone will ask a few questions when you install. They are explained just below.</p>
+    <p class="fine center">Your phone will ask a few questions while installing. The steps are just below.</p>
   </section>
 
   <!-- ----------------------------------------------------------- install -->
@@ -232,10 +241,10 @@
 
   <!-- ----------------------------------------------------------- contact -->
   <section class="contact" id="contact">
-    <h2>Stuck? Talk to us.</h2>
-    <p>We are students too, and we answer.</p>
+    <h2>Need a hand?</h2>
+    <p>Email or WhatsApp us and we will sort it out.</p>
     <div class="contact-links">
-      <a href="mailto:brainiswaken@gmail.com">brainiswaken@gmail.com</a>
+      <a href="mailto:brainonclock@gmail.com">brainonclock@gmail.com</a>
       <a href="https://wa.me/254702797977">WhatsApp 0702 797 977</a>
       <a href="https://wa.me/254711694082">WhatsApp 0711 694 082</a>
     </div>
@@ -243,12 +252,27 @@
 
 </main>
 
+<dialog id="guide" aria-labelledby="guide-title">
+  <button class="guide-close" id="guide-close" aria-label="Close">×</button>
+  <h2 id="guide-title">Your download has started</h2>
+  <p>Here is what to tap next. It takes about two minutes.</p>
+  <ol>
+    <li><b>Browser warning.</b> If it says the file might be harmful, tap <b>Download anyway</b> or <b>Keep</b>. It says that for every app file.</li>
+    <li><b>Open the file</b> from the download notification or your Downloads folder.</li>
+    <li><b>"Not allowed to install unknown apps".</b> Tap <b>Settings</b>, switch on <b>Allow from this source</b>, go back, tap <b>Install</b>.</li>
+    <li><b>Play Protect.</b> If it offers <b>Scan app</b>, let it scan. Then <b>More details</b> and <b>Install anyway</b>.</li>
+    <li><b>Open the app</b> and allow notifications and alarms when it asks.</li>
+  </ol>
+  <p class="fine">On Tecno, Infinix, Itel, Xiaomi, Oppo, Vivo or Huawei, also allow autostart and unrestricted battery when the app asks.</p>
+  <div class="guide-actions"><a class="ghost" href="#install" id="guide-more">Full instructions</a><button class="cta small" id="guide-ok">Got it</button></div>
+</dialog>
+
 <footer class="foot">
   <span>© Brainwake &amp; Co., Nairobi</span>
   <span><a href="terms.html">Terms and Conditions</a> · <a href="privacy.html">Privacy Policy</a></span>
 </footer>
 
 <script src="soma/config.js?v=20261124"></script>
-<script src="site.js?v=1"></script>
+<script src="site.js?v=2"></script>
 </body>
 </html>

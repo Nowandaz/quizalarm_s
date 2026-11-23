@@ -49,56 +49,115 @@ code { font: 0.92em ui-monospace, Menlo, Consolas, monospace; background: var(--
 @media (max-width: 900px) { .hero { grid-template-columns: minmax(0, 1fr); } .stage { order: 2; } }
 
 /* ------------------------------------------------------ the 3D phone */
-.stage { perspective: 1500px; display: grid; justify-items: center; }
-.stage-note { margin-top: 26px; font-size: 14px; color: var(--muted); text-align: center; }
-.phone { --w: 300px; position: relative; width: var(--w); aspect-ratio: 309 / 669; border-radius: 42px; background: #000;
-  border: 2px solid #2b2f3d; box-shadow: 0 0 0 7px #0d0f15, 0 0 0 8px #262a37, 0 50px 90px -30px rgba(0, 0, 0, .9), 0 0 120px -40px rgba(138, 180, 248, .35);
-  transform-style: preserve-3d; transition: transform .25s ease-out; will-change: transform; }
-.phone.tilt { transform: rotateY(var(--ry, -16deg)) rotateX(var(--rx, 7deg)); }
-/* The edge of the phone, visible once it turns. */
-.phone-side { position: absolute; inset: -8px; border-radius: 50px; background: linear-gradient(90deg, #3a3f50, #151821 40%, #0a0b10);
-  transform: translateZ(-14px); box-shadow: 0 0 0 1px #000; }
-.phone .screen, .phone > img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 40px; overflow: hidden; background: #000; }
-.phone > img { object-fit: cover; display: block; }
-figure.phone { margin: 0; }
-@media (max-width: 400px) { .phone { --w: 260px; } }
+/* One phone, used everywhere. --n is its width in pixels (a plain number).
+   Inside the glass sits ".app", laid out at the app's real size
+   (412 x 928) and scaled down to fit, so everything keeps the app's
+   exact proportions. */
+@font-face { font-family: "Plus Jakarta Sans"; src: url("brand/PlusJakartaSans.ttf") format("truetype"); font-weight: 200 800; font-display: swap; }
 
-/* The demo screen (a small copy of the app's ringing screen). */
-.screen { display: flex; flex-direction: column; padding: 14px 16px 18px; font-family: "Outfit", system-ui, sans-serif; color: #f5f5f7; user-select: none; }
-.statusbar { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; padding: 2px 6px 10px; }
-.bars { display: flex; gap: 2px; align-items: flex-end; }
-.bars i { width: 3px; background: #f5f5f7; border-radius: 1px; }
-.bars i:nth-child(1) { height: 5px; } .bars i:nth-child(2) { height: 8px; } .bars i:nth-child(3) { height: 11px; }
-.ring-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 2px 10px; border-bottom: 1px solid #1f1f24; }
-.ring-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #a8a8b3; font-weight: 500; }
-.bell { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 0 0 rgba(255, 107, 94, .7); animation: pulse 1.2s infinite; }
-.screen.off .bell { background: var(--good); animation: none; }
-@keyframes pulse { 70% { box-shadow: 0 0 0 9px rgba(255, 107, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 107, 94, 0); } }
-.streak { display: flex; gap: 5px; }
-.streak i { width: 22px; height: 6px; border-radius: 3px; background: #26262b; transition: background .2s; }
-.streak i.on { background: var(--blue); }
-.ring-body { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; padding-top: 8px; }
-.topic { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #8e8e93; font-weight: 600; margin-bottom: 6px; }
-.question { font-size: 17.5px; line-height: 1.25; font-weight: 600; margin: 0 0 12px; color: #f5f5f7; text-wrap: balance; }
-.options { display: grid; gap: 7px; }
-.options button, .answer-row button, .again { font: inherit; color: #f5f5f7; cursor: pointer; }
-.options button { text-align: left; background: #141417; border: 1px solid #26262b; border-radius: 13px; padding: 10px 12px; font-size: 14px; font-weight: 500; transition: border-color .15s, background .15s; }
-.options button:hover:not(:disabled) { border-color: var(--blue); }
-.options button.right { background: rgba(69, 212, 131, .16); border-color: var(--good); }
-.options button.wrong { background: rgba(255, 107, 94, .14); border-color: var(--bad); }
-.options button:disabled { cursor: default; }
-.answer-row { display: grid; gap: 8px; }
-.answer-row input { font: inherit; font-size: 15px; color: #f5f5f7; background: #141417; border: 1.5px solid var(--blue); border-radius: 13px; padding: 11px 12px; width: 100%; outline: none; }
-.answer-row button, .again { background: #f5f5f7; color: #000; border: 0; border-radius: 999px; padding: 11px; font-weight: 700; font-size: 15px; }
-.verdict { font-size: 13px; line-height: 1.35; margin: 10px 2px 0; min-height: 36px; color: #a8a8b3; }
-.verdict b { color: var(--good); } .verdict b.no { color: var(--bad); }
+.stage { perspective: 1600px; display: grid; justify-items: center; }
+.stage-note { margin-top: 30px; font-size: 14px; color: var(--muted); text-align: center; }
+
+.phone { --n: 300; --pad: calc(var(--n) * .026px); --s: calc(var(--n) * .928 / 412);
+  position: relative; flex: none; margin: 0; width: calc(var(--n) * 1px); padding: var(--pad); border-radius: calc(var(--n) * .165px);
+  /* Brushed silver band. */
+  background: linear-gradient(125deg, #fbfbfc 0%, #b9bdc6 14%, #eceef1 30%, #9a9fa9 48%, #e3e5e9 63%, #8b909a 80%, #d5d8dd 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .75), inset 0 0 0 2.5px rgba(40, 44, 54, .35),
+    0 60px 90px -34px rgba(0, 0, 0, .95), 0 0 140px -50px rgba(138, 180, 248, .45);
+  transform-style: preserve-3d; transition: transform .25s ease-out; will-change: transform; }
+.phone.tilt { transform: rotateY(var(--ry, -17deg)) rotateX(var(--rx, 6deg)); }
+/* The side buttons. */
+.phone::before, .phone::after { content: ""; position: absolute; width: 4px; border-radius: 2px; background: linear-gradient(90deg, #7d828c, #dfe1e5 45%, #8e939d); transform: translateZ(-4px); }
+.phone::before { right: -3px; top: 27%; height: 12%; }
+.phone::after { left: -3px; top: 21%; height: 19%; box-shadow: 0 0 0 0 transparent; }
+/* The thickness of the phone: copies of its outline, stepped back. */
+.phone .edge { position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(125deg, #c9ccd3, #7f848e 40%, #b4b8c0 70%, #6d727c); pointer-events: none; }
+.glass { position: relative; border-radius: calc(var(--n) * .14px); background: #000; overflow: hidden;
+  height: calc(928px * var(--s)); box-shadow: 0 0 0 calc(var(--n) * .011px) #050506; transform: translateZ(1px); }
+/* A soft reflection across the glass. */
+.glass::after { content: ""; position: absolute; inset: 0; background: linear-gradient(118deg, rgba(255, 255, 255, .11) 0%, rgba(255, 255, 255, .03) 22%, transparent 34%); pointer-events: none; }
+.app { width: 412px; height: 928px; transform: scale(var(--s)); transform-origin: 0 0; background: #000; color: #fff;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif; display: flex; flex-direction: column; }
+.app > img { display: block; width: 412px; height: 892px; }
+.status { height: 36px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 6px 26px 0; font: 600 14px "Plus Jakarta Sans", system-ui, sans-serif; color: #fff; position: relative; }
+.cam { position: absolute; left: 50%; top: 11px; width: 13px; height: 13px; margin-left: -6px; border-radius: 50%; background: #0c0d10; box-shadow: 0 0 0 2px #17181c, inset 0 0 3px #2a3550; }
+.sys { display: flex; align-items: center; gap: 6px; }
+.sig { width: 15px; height: 11px; background: linear-gradient(90deg, #fff 0 3px, transparent 3px 4px, #fff 4px 7px, transparent 7px 8px, #fff 8px 11px, transparent 11px 12px, #fff 12px 15px); clip-path: polygon(0 100%, 100% 0, 100% 100%); }
+.wifi { width: 14px; height: 11px; background: #fff; clip-path: polygon(50% 100%, 0 30%, 18% 12%, 50% 0, 82% 12%, 100% 30%); }
+.bat { width: 22px; height: 11px; border: 1.5px solid #fff; border-radius: 3px; position: relative; }
+.bat::before { content: ""; position: absolute; inset: 1.5px 5px 1.5px 1.5px; background: #fff; border-radius: 1px; }
+
+/* "Your alarm is ringing" above the live phone. */
+.ringing { display: grid; justify-items: center; gap: 2px; margin-bottom: 26px; text-align: center; font-family: "Outfit", system-ui, sans-serif; }
+.ringing b { font-size: 19px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.ringing b::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--bad); animation: pulse 1.2s infinite; }
+.ringing span { color: var(--blue); font-size: 16px; }
+.ringing.off b::before { background: var(--good); animation: none; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 107, 94, .7); } 70% { box-shadow: 0 0 0 11px rgba(255, 107, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 107, 94, 0); } }
+/* The phone buzzes like a ringing phone until someone touches it. */
+.phone.buzz { animation: buzz 2.6s ease-in-out infinite; }
+@keyframes buzz {
+  0%, 12%, 100% { transform: rotateY(var(--ry, -17deg)) rotateX(var(--rx, 6deg)); }
+  2%, 6%, 10% { transform: rotateY(var(--ry, -17deg)) rotateX(var(--rx, 6deg)) translateX(-3px) rotateZ(-.6deg); }
+  4%, 8% { transform: rotateY(var(--ry, -17deg)) rotateX(var(--rx, 6deg)) translateX(3px) rotateZ(.6deg); }
+}
+
+/* ------------------------------------- the app's alarm screen, copied */
+/* Sizes are the app's own (see lib/screens/alarm_ring_screen.dart). */
+.ring { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 20px; user-select: none; transition: background .3s; }
+.ring-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ring-name { display: flex; align-items: center; gap: 8px; color: rgba(255, 255, 255, .7); font-weight: 700; font-size: 15px; min-width: 0; }
+.ring svg { width: 20px; height: 20px; fill: currentColor; flex: none; }
+.ring-time { font: 600 22px "Outfit", system-ui, sans-serif; }
+.ring-streak { display: flex; align-items: center; gap: 6px; margin-top: 14px; font-weight: 700; font-size: 16px; }
+.ring-bar { height: 8px; border-radius: 6px; background: rgba(255, 255, 255, .14); margin-top: 12px; overflow: hidden; }
+.ring-bar i { display: block; height: 100%; width: 0; background: #fff; border-radius: 6px; transition: width .3s ease; }
+.ring-note { text-align: right; font-size: 13px; color: rgba(255, 255, 255, .54); padding-top: 6px; }
+.ring-note.hot { color: #ff453a; }
+.ring-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
+.view { display: flex; flex-direction: column; animation: swap .22s ease; }
+@keyframes swap { from { opacity: 0; } to { opacity: 1; } }
+
+.q-topic { color: rgba(255, 255, 255, .54); font-weight: 700; font-size: 14px; }
+.q-text { font: 600 24px/1.2 "Outfit", system-ui, sans-serif; margin: 12px 0 20px; }
+.q-opt { display: flex; align-items: center; gap: 12px; width: 100%; margin-bottom: 9px; padding: 12px; text-align: left; cursor: pointer;
+  font: 600 16px/1.3 "Plus Jakarta Sans", system-ui, sans-serif; color: #fff; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .14); border-radius: 16px; }
+.q-opt:hover { background: rgba(255, 255, 255, .13); }
+.q-opt:active { background: rgba(255, 255, 255, .2); }
+.q-opt .badge { width: 30px; height: 30px; flex: none; border-radius: 9px; background: rgba(255, 255, 255, .12); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.q-input { font: 500 16px "Plus Jakarta Sans", system-ui, sans-serif; color: #fff; background: #17171a; border: 1.5px solid #8ab4f8; border-radius: 16px; padding: 15px 16px; width: 100%; outline: none; }
+.q-input::placeholder { color: #8e8e93; }
+.q-submit, .next { margin-top: 12px; height: 52px; border: 0; border-radius: 999px; background: #f5f5f7; color: #000; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  font: 700 16px "Plus Jakarta Sans", system-ui, sans-serif; }
+.next svg { fill: #000; }
+
+.correct { align-items: center; text-align: center; }
+.correct svg { width: 72px; height: 72px; fill: #30d158; }
+.correct h4 { font: 700 28px "Plus Jakarta Sans", system-ui, sans-serif; margin: 12px 0 4px; }
+.correct p { margin: 0; color: rgba(255, 255, 255, .7); font-size: 16px; }
+.correct .hint { margin-top: 10px; color: rgba(255, 255, 255, .54); font-size: 14px; }
+
+.wrong { background: rgba(255, 255, 255, .04); border-radius: 20px; padding: 16px; }
+.wrong-head { display: flex; align-items: center; gap: 8px; color: #ff453a; font-weight: 700; font-size: 22px; }
+.wrong-head svg { width: 28px; height: 28px; }
+.wrong-head span { margin-left: auto; color: rgba(255, 255, 255, .54); font-weight: 400; font-size: 14px; }
+.wrong-q { color: rgba(255, 255, 255, .7); font-size: 15px; margin: 12px 0; line-height: 1.35; }
+.abox { display: flex; gap: 10px; align-items: flex-start; padding: 12px; margin-bottom: 10px; border-radius: 12px; border: 1px solid; }
+.abox svg { width: 22px; height: 22px; }
+.abox small { display: block; font-weight: 700; font-size: 12px; letter-spacing: .5px; }
+.abox div div { font-size: 17px; color: #fff; margin-top: 2px; line-height: 1.25; }
+.abox.no { color: #ff453a; background: rgba(255, 69, 58, .14); border-color: rgba(255, 69, 58, .7); }
+.abox.yes { color: #30d158; background: rgba(48, 209, 88, .14); border-color: rgba(48, 209, 88, .7); }
+.why-label { color: rgba(255, 255, 255, .54); font-weight: 700; font-size: 12px; letter-spacing: .5px; }
+.why { color: #fff; font-size: 14px; line-height: 1.4; margin: 4px 0 2px; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+
+.done { align-items: center; text-align: center; }
+.done svg { width: 88px; height: 88px; fill: #30d158; }
+.done h4 { font: 600 36px "Outfit", system-ui, sans-serif; margin: 20px 0 8px; }
+.done p { margin: 0 0 22px; color: rgba(255, 255, 255, .7); font-size: 17px; }
+.done .next { padding: 0 26px; margin-top: 0; }
 .shake { animation: shake .35s; }
-@keyframes shake { 20% { transform: translateX(-7px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
-.done { text-align: center; }
-.done .big-time { font-size: 58px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
-.done h4 { font-size: 22px; margin: 14px 0 4px; font-weight: 600; }
-.done p { font-size: 14px; color: #a8a8b3; margin: 0 0 18px; }
-.again { display: inline-block; padding: 10px 22px; }
+@keyframes shake { 20% { transform: scale(var(--s)) translateX(-9px); } 40% { transform: scale(var(--s)) translateX(9px); } 60% { transform: scale(var(--s)) translateX(-5px); } 80% { transform: scale(var(--s)) translateX(5px); } }
 
 /* --------------------------------------------------------------- bands */
 .band { max-width: 1240px; margin: 0 auto; padding: clamp(48px, 7vw, 96px) clamp(16px, 4vw, 44px); }
@@ -118,17 +177,17 @@ figure.phone { margin: 0; }
 .points { list-style: none; margin: 22px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 40px; max-width: 980px; }
 .points li { color: var(--soft); padding-left: 16px; border-left: 2px solid var(--line); }
 .points b { color: var(--ink); }
-.fan { perspective: 1800px; display: flex; justify-content: center; align-items: center; gap: 0; padding: clamp(40px, 6vw, 80px) 0 clamp(60px, 8vw, 110px); min-height: 640px; }
-.fan .phone { --w: 262px; flex: none; transition: transform .35s ease-out; }
-.fan .s1 { transform: translateX(46px) translateZ(-120px) rotateY(calc(34deg * var(--open, 1) + var(--px, 0deg))) rotateX(var(--py, 0deg)); }
-.fan .s2 { transform: translateZ(40px) rotateY(var(--px, 0deg)) rotateX(var(--py, 0deg)); z-index: 2; }
-.fan .s3 { transform: translateX(-46px) translateZ(-120px) rotateY(calc(-34deg * var(--open, 1) + var(--px, 0deg))) rotateX(var(--py, 0deg)); }
-@media (max-width: 760px) {
-  .fan { min-height: 520px; }
-  .fan .phone { --w: 200px; }
-  .fan .s1 { transform: translateX(84px) translateZ(-160px) rotateY(calc(30deg * var(--open, 1))); }
-  .fan .s3 { transform: translateX(-84px) translateZ(-160px) rotateY(calc(-30deg * var(--open, 1))); }
+.fan { perspective: 1900px; display: flex; justify-content: center; align-items: center; padding: clamp(40px, 6vw, 80px) 0 clamp(60px, 8vw, 110px); }
+.fan .phone { transition: transform .35s ease-out; }
+.fan .s1 { transform: translateX(40px) translateZ(-130px) rotateY(calc(32deg * var(--open, 1) + var(--px, 0deg))) rotateX(var(--py, 0deg)); }
+.fan .s2 { transform: translateZ(50px) rotateY(var(--px, 0deg)) rotateX(var(--py, 0deg)); z-index: 2; }
+.fan .s3 { transform: translateX(-40px) translateZ(-130px) rotateY(calc(-32deg * var(--open, 1) + var(--px, 0deg))) rotateX(var(--py, 0deg)); }
+@media (max-width: 860px) {
+  .fan .phone { --n: 190 !important; }
+  .fan .s1 { transform: translateX(78px) translateZ(-170px) rotateY(calc(28deg * var(--open, 1))); }
+  .fan .s3 { transform: translateX(-78px) translateZ(-170px) rotateY(calc(-28deg * var(--open, 1))); }
 }
+@media (max-width: 420px) { #demo-phone { --n: 290 !important; } }
 
 /* --------------------------------------------------------------- plans */
 .plans { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
@@ -186,5 +245,16 @@ details p { max-width: 44em; padding-bottom: 8px; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .phone, .fan .phone { transition: none; }
-  .bell, .shake { animation: none; }
+  .phone.buzz, .shake, .ringing b::before { animation: none; }
 }
+
+/* ------------------------------------- the install guide after a download */
+dialog#guide { width: min(560px, calc(100vw - 28px)); border: 1px solid #2a3350; border-radius: 24px; background: #0e111a; color: var(--ink); padding: 28px 26px 22px; }
+dialog#guide::backdrop { background: rgba(2, 3, 6, .78); backdrop-filter: blur(3px); }
+dialog#guide h2 { font-size: 26px; margin: 0 30px 6px 0; }
+dialog#guide ol { margin: 14px 0 12px; padding-left: 22px; display: grid; gap: 10px; color: var(--soft); font-size: 16px; }
+dialog#guide b { color: var(--ink); font-weight: 600; }
+.guide-close { position: absolute; right: 14px; top: 12px; width: 38px; height: 38px; border-radius: 50%; border: 0; background: transparent; color: var(--soft); font-size: 26px; cursor: pointer; }
+.guide-close:hover { background: var(--card); color: var(--ink); }
+.guide-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
+.guide-actions .cta { border: 0; cursor: pointer; }
