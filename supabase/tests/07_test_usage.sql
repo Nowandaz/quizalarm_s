@@ -121,3 +121,20 @@ select pg_temp.expect(
   'phone models are counted, guests included');
 reset role;
 select 'PASSED: devices' as result;
+
+-- One row per phone (part 16).
+select pg_temp.act_as(null);
+select public.app_ping('00000000-0000-0000-0000-00000000aa09', 'guest', '1.0.0', 'android');
+reset role;
+update public.app_installs set first_seen = now() - interval '9 days' where install = '00000000-0000-0000-0000-00000000aa09';
+select pg_temp.act_as(null);
+select public.app_ping(install => '00000000-0000-0000-0000-00000000bb09', version => '1.3.0', platform => 'android',
+                       device => 'Pixel 8 (Android 16)', replaces => '00000000-0000-0000-0000-00000000aa09');
+select public.app_ping(install => '00000000-0000-0000-0000-00000000bb09', version => '1.3.0', platform => 'android');
+reset role;
+select pg_temp.expect(
+  (select count(*) from public.app_installs where install = '00000000-0000-0000-0000-00000000aa09') = 0
+  and (select first_seen < now() - interval '8 days' and pings = 2 and device = 'Pixel 8 (Android 16)'
+         from public.app_installs where install = '00000000-0000-0000-0000-00000000bb09'),
+  'a phone counted under an old number is folded into its new one, keeping its first day');
+select 'PASSED: one row per phone' as result;
