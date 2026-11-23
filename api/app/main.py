@@ -85,7 +85,7 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
         if http is None:
             await app.state.http.aclose()
 
-    app = FastAPI(title="BrainWake API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="Brain O' Clock API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
     # Browsers (the web emulator) may call the API from another address. Safe:
     # callers prove who they are with a token in a header, never a cookie.

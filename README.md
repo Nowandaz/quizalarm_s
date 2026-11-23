@@ -1,6 +1,6 @@
-# BrainWake server (quizalarm_s)
+# Brain O' Clock server (quizalarm_s)
 
-Everything behind the BrainWake app ([quiz_alarm](https://github.com/Nowandaz/quiz_alarm)):
+Everything behind the Brain O' Clock app ([quiz_alarm](https://github.com/Nowandaz/quiz_alarm)):
 the database design, and (coming next) the admin website and the small API
 that makes AI calls.
 
@@ -62,9 +62,9 @@ What each page does:
   on/off switch.
 
 To look at the site without signing in or touching real data, open
-`admin/preview.html`: the same pages on made-up data kept in memory.
+`admin/soma/preview.html`: the same pages on made-up data kept in memory.
 
-`admin/config.js` holds the project address and its publishable key.
+`admin/soma/config.js` holds the project address and its publishable key.
 Both are public by design; the database rules decide what a signed-in
 person may do.
 

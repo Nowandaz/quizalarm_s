@@ -194,38 +194,19 @@ function render() {
 
 // ------------------------------------------------------------------ sign-in
 
+// Signing in only. Accounts are not created here: staff create theirs in
+// the app like everyone else, and the owner then makes them an admin on
+// the Accounts page. (An account is an ordinary user until the owner says
+// otherwise; the database enforces that, not this page.)
 function renderSignIn() {
-  let creating = false;
   const email = h('input', { type: 'email', autocomplete: 'email', placeholder: 'you@example.com' });
   const password = h('input', { type: 'password', autocomplete: 'current-password' });
-  const submit = h('button', { class: 'primary', style: 'width:100%;justify-content:center' });
-  const switchMode = h('a', {});
-  const note = h('p', { class: 'muted small' });
-
-  const refresh = () => {
-    submit.textContent = creating ? 'Create account' : 'Sign in';
-    switchMode.textContent = creating ? 'I already have an account' : 'Create an account';
-  };
-  switchMode.addEventListener('click', () => { creating = !creating; refresh(); });
-  refresh();
+  const submit = h('button', { class: 'primary', style: 'width:100%;justify-content:center' }, 'Sign in');
 
   const go = async () => {
     if (!email.value.trim() || !password.value) { toast('Enter your email and password', true); return; }
     submit.disabled = true;
-    await attempt(async () => {
-      if (creating) {
-        const data = ok(await db.auth.signUp({
-          email: email.value.trim(),
-          password: password.value,
-          options: { emailRedirectTo: location.origin + location.pathname },
-        }));
-        if (!data.session) {
-          note.textContent = 'Account created. Open the confirmation link sent to your email, then sign in here.';
-        }
-      } else {
-        ok(await db.auth.signInWithPassword({ email: email.value.trim(), password: password.value }));
-      }
-    });
+    await attempt(async () => ok(await db.auth.signInWithPassword({ email: email.value.trim(), password: password.value })));
     submit.disabled = false;
   };
   submit.addEventListener('click', go);
@@ -233,25 +214,18 @@ function renderSignIn() {
 
   fill(app, h('div', { class: 'auth' },
     h('h1', {}, `${CONFIG.appName} admin`),
-    h('p', { class: 'muted' }, 'Sign in to manage the question bank.'),
+    h('p', { class: 'muted' }, 'For staff only.'),
     h('div', { class: 'card' },
       field('Email', email),
       field('Password', password),
       submit,
-      note,
-      h('div', { class: 'row spread small', style: 'margin-top:10px' },
-        switchMode,
+      h('div', { class: 'row small', style: 'margin-top:10px' },
         h('a', { onclick: async () => {
           if (!email.value.trim()) { toast('Type your email first', true); return; }
           await attempt(async () => ok(await db.auth.resetPasswordForEmail(email.value.trim(), {
             redirectTo: location.origin + location.pathname,
           })), 'Password reset email sent');
-        } }, 'Forgot password?')),
-      h('div', { class: 'divider' }, 'or'),
-      h('button', { style: 'width:100%;justify-content:center', onclick: () => attempt(async () => ok(await db.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: location.origin + location.pathname },
-      }))) }, 'Continue with Google'))));
+        } }, 'Forgot password?')))));
 }
 
 function renderNewPassword() {
@@ -310,7 +284,7 @@ function renderShell() {
     CONFIG.demo && h('div', { class: 'demo-banner' }, 'Preview with made-up data. Nothing here is saved.'),
     h('div', { class: 'shell' },
       h('div', { class: 'side' },
-        h('div', { class: 'brand' }, CONFIG.appName),
+        h('div', { class: 'brand' }, h('img', { src: '../brand/mark.png', alt: '', width: 34, height: 34 }), CONFIG.appName),
         h('div', { class: 'brand-sub' }, 'Admin'),
         link('dashboard', 'Dashboard', 'home'),
         link('stats', 'Statistics', 'chart'),

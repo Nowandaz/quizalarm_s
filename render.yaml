@@ -1,4 +1,5 @@
-# Hosts the admin website on Render as a free static site.
+# Hosts the public pages (a small home page, Terms, Privacy) and, under
+# /soma/, the admin website on Render as a free static site.
 # In Render: New > Blueprint > pick this repository. Nothing is built: the
 # files in admin/ are served as they are. The site holds no secret; signing
 # in and every permission are handled by Supabase.
