@@ -24,7 +24,7 @@
       { id: 'pathology-spotters', unit_id: 'pathology', name: 'Spotters', access: 'paid', sort_order: 0, deleted_at: null },
     ],
     questions: [],
-    app_releases: [{ id: 2, version: '1.0.1', url: 'https://amkausome.onrender.com/download/brain-o-clock-1.0.1.apk', size_mb: 24.6, notes: 'Alarms that nobody answers now stop after ten minutes. Faster sign-in with Google.', published_at: days(1) }, { id: 1, version: '1.0.0', url: 'https://amkausome.onrender.com/download/brain-o-clock-1.0.0.apk', size_mb: 24.1, notes: 'First version.', published_at: days(12) }],
+    app_releases: [{ id: 2, version: '1.0.1', url: 'https://brainoclock.onrender.com/download/brain-o-clock-1.0.1.apk', size_mb: 24.6, notes: 'Alarms that nobody answers now stop after ten minutes. Faster sign-in with Google.', published_at: days(1) }, { id: 1, version: '1.0.0', url: 'https://brainoclock.onrender.com/download/brain-o-clock-1.0.0.apk', size_mb: 24.1, notes: 'First version.', published_at: days(12) }],
     tiers: [
       { id: 'pro', name: 'Pro', description: 'The whole question bank, the AI and your own alarm volume.', features: ['Every topic in the question bank', 'AI tutor and new AI questions: 100 a day', 'Trends and figures for every topic', 'Choose and lock each alarm\'s volume'], price_month: 100, price_year: null, ai_daily_limit: 100, premium_units: true, sort_order: 1, active: true },
       { id: 'ultra', name: 'Ultra', description: 'Everything in Pro, far more AI and faster support.', features: ['Everything in Pro', 'AI tutor and new AI questions: 500 a day', 'Faster replies from the support team'], price_month: 150, price_year: null, ai_daily_limit: 500, premium_units: true, sort_order: 2, active: true },

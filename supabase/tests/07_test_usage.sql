@@ -170,4 +170,10 @@ select pg_temp.expect(
      and bool_and(q ->> 'topic' = 'Rest' and q ? 'answer') from jsonb_array_elements(public.homepage_questions()) q),
   'picked questions are served, with their answers, and drafts are not');
 reset role;
+update public.questions set on_homepage = true, image_path = 'seed/x.png' where id = 'tp-04';
+select pg_temp.act_as(null);
+select pg_temp.expect(
+  (select count(*) = 1 from jsonb_array_elements(public.homepage_questions()) q where q ->> 'image_path' = 'seed/x.png'),
+  'a picked picture question comes with its picture');
+reset role;
 select 'PASSED: home page questions' as result;
