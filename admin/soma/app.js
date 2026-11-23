@@ -290,6 +290,7 @@ function renderShell() {
         link('dashboard', 'Dashboard', 'home'),
         link('stats', 'Statistics', 'chart'),
         link('bank', 'Question bank', 'book'),
+        link('drafts', 'Drafts to check', 'edit'),
         link('flags', 'Flagged questions', 'flag'),
         link('messages', 'Messages to users', 'bell'),
         link('alarms', 'Alarm reports', 'alarm'),
@@ -308,6 +309,7 @@ function renderShell() {
     dashboard: () => pageDashboard(main),
     bank: () => (b ? pageTopic(main, a, b) : a ? pageUnit(main, a) : pageBank(main)),
     stats: () => pageStats(main),
+    drafts: () => pageDrafts(main),
     flags: () => pageFlags(main),
     messages: () => pageMessages(main),
     alarms: () => pageAlarms(main),
@@ -655,13 +657,13 @@ function questionCard(topic, x, number) {
     h('div', { class: 'num' }, number),
     h('div', { class: 'grow' },
       h('div', { class: 'row', style: 'margin-bottom:6px' },
-        h('span', { class: 'pill' }, x.type === 'mcq' ? 'Multiple choice' : 'Typed answer'),
+        h('span', { class: 'pill' }, x.type === 'mcq' ? 'Multiple choice' : x.long_answer ? `Long answer · ${x.marks} mark${x.marks === 1 ? '' : 's'}` : 'Typed answer'),
         x.deleted_at ? h('span', { class: 'pill bad' }, 'Deleted')
           : x.status === 'draft' ? h('span', { class: 'pill' }, 'Draft') : h('span', { class: 'pill ok' }, 'Published'),
         x.source === 'ai' && h('span', { class: 'pill accent' }, 'AI'),
         x.image_path && h('span', { class: 'pill accent' }, 'Picture'),
         // Whether the alarm demo on the website's front page may ask it.
-        !x.deleted_at && x.status !== 'draft' && h('button', {
+        !x.deleted_at && x.status !== 'draft' && !x.long_answer && h('button', {
           class: x.on_homepage ? 'chip on' : 'chip', style: 'margin-left:auto',
           title: 'The alarm demo on the home page asks the questions switched on here. Their answers become public.',
           onclick: async (e) => {
@@ -675,10 +677,15 @@ function questionCard(topic, x, number) {
       h('div', { class: 'text' }, x.text),
       x.type === 'mcq'
         ? h('div', { class: 'opts' }, (x.options || []).map((o, i) => h('div', { class: o === x.answer ? 'opt right-answer' : 'opt' }, h('b', {}, 'ABCDE'[i] || ''), o)))
-        : h('div', { class: 'opts' },
-            h('div', { class: 'opt right-answer' }, h('b', {}, icon('check')), x.answer),
-            (x.alt_answers || []).map((a) => h('div', { class: 'opt' }, h('b', {}, '='), a))),
-      x.explanation ? h('div', { class: 'explain' }, x.explanation) : h('div', { class: 'explain', style: 'color:var(--bad)' }, 'No explanation yet.')),
+        : x.long_answer
+          ? h('div', { class: 'opts' },
+              h('div', { class: 'opt right-answer', style: 'white-space:pre-wrap' }, h('b', {}, icon('check')), x.answer),
+              (x.key_points || []).map((p, i) => h('div', { class: 'opt' }, h('b', {}, i + 1), p.join(' / '))))
+          : h('div', { class: 'opts' },
+              h('div', { class: 'opt right-answer' }, h('b', {}, icon('check')), x.answer),
+              (x.alt_answers || []).map((a) => h('div', { class: 'opt' }, h('b', {}, '='), a))),
+      x.explanation ? h('div', { class: 'explain' }, x.explanation) : h('div', { class: 'explain', style: 'color:var(--bad)' }, 'No explanation yet.'),
+      x.review_note && h('div', { class: 'muted small', style: 'margin-top:8px' }, 'Note: ', x.review_note)),
     x.image_path && h('img', { src: imageUrl(x.image_path), alt: 'Question picture', loading: 'lazy' }));
 }
 
@@ -687,8 +694,8 @@ function questionDialog(topic, question) {
   const q = question || { type: 'mcq', text: '', options: ['', '', '', '', ''], answer: '', alt_answers: [], explanation: '', image_path: '', status: 'published' };
   let imagePath = q.image_path || '';
 
-  const type = h('select', {}, h('option', { value: 'mcq' }, 'Multiple choice (5 options)'), h('option', { value: 'saq' }, 'Typed answer'));
-  type.value = q.type;
+  const type = h('select', {}, h('option', { value: 'mcq' }, 'Multiple choice (5 options)'), h('option', { value: 'saq' }, 'Typed answer (one thing)'), h('option', { value: 'long' }, 'Long answer (several points, practice only)'));
+  type.value = q.long_answer ? 'long' : q.type;
   const text = h('textarea', {}, q.text);
   const explanation = h('textarea', { style: 'min-height:110px' }, q.explanation);
   const status = h('select', {}, h('option', { value: 'published' }, 'Published (visible in the app)'), h('option', { value: 'draft' }, 'Draft (hidden from the app)'));
@@ -703,12 +710,22 @@ function questionDialog(topic, question) {
     optionInputs.map((input, i) => h('div', { class: 'option-row' }, radios[i], input)));
 
   // Typed answer: the answer plus other accepted spellings.
-  const answer = h('input', { type: 'text', value: q.type === 'saq' ? q.answer : '' });
+  const answer = h('input', { type: 'text', value: q.type === 'saq' && !q.long_answer ? q.answer : '' });
   const alternatives = h('textarea', { style: 'min-height:60px' }, (q.alt_answers || []).join('\n'));
   const saqBox = h('div', {}, field('Answer', answer),
     field('Also accepted', alternatives, 'One per line: other names or spellings that count as correct.'));
 
-  const showType = () => { mcqBox.style.display = type.value === 'mcq' ? '' : 'none'; saqBox.style.display = type.value === 'saq' ? '' : 'none'; };
+  // Long answer: marks, the model answer, and the points that earn the marks.
+  const marks = h('input', { type: 'number', min: 1, max: 20, value: q.marks || 2, style: 'max-width:110px' });
+  const model = h('textarea', { style: 'min-height:80px' }, q.long_answer ? q.answer : '');
+  const points = h('textarea', { style: 'min-height:110px' }, (q.long_answer ? (q.key_points || []) : []).map((p) => p.join(', ')).join('\n'));
+  const longBox = h('div', {},
+    h('p', { class: 'muted small' }, 'For "List 4...", "Explain..." and similar. Asked in practice only, never when an alarm rings.'),
+    field('Marks', marks, 'How many points are needed for full marks.'),
+    field('Model answer', model, 'Shown after answering.'),
+    field('Points that earn the marks', points, 'One point per line. On each line, the wordings that count for that point, separated by commas: sedation, anxiolysis, reduce anxiety'));
+
+  const showType = () => { mcqBox.style.display = type.value === 'mcq' ? '' : 'none'; saqBox.style.display = type.value === 'saq' ? '' : 'none'; longBox.style.display = type.value === 'long' ? '' : 'none'; };
   type.addEventListener('change', showType);
   showType();
 
@@ -733,7 +750,7 @@ function questionDialog(topic, question) {
     h('h2', {}, isNew ? `Add a question to ${topic.name}` : 'Edit question'),
     h('div', { class: 'row' }, h('div', { class: 'grow' }, field('Type', type)), h('div', { class: 'grow' }, field('Status', status))),
     field('Question', text),
-    mcqBox, saqBox,
+    mcqBox, saqBox, longBox,
     field('Explanation', explanation, 'Shown after answering, also offline. Say why the answer is right.'),
     h('div', { class: 'field' }, h('label', {}, 'Picture (for spotter questions)'), preview, h('div', { style: 'margin-top:8px' }, file)),
     h('div', { class: 'row' },
@@ -742,7 +759,7 @@ function questionDialog(topic, question) {
         : h('button', { class: 'danger', onclick: () => { close(); confirmDialog('Delete this question?', 'It disappears from the app at its next sync. It can be restored here later.', 'Delete', async () => { await attempt(async () => ok(await db.from('questions').update({ deleted_at: new Date().toISOString() }).eq('id', q.id)), 'Question deleted'); render(); }); } }, 'Delete')),
       h('button', { class: 'right', onclick: close }, 'Cancel'),
       h('button', { class: 'primary', onclick: async () => {
-        const row = { type: type.value, text: text.value.trim(), explanation: explanation.value.trim(), image_path: imagePath, status: status.value };
+        const row = { type: type.value === 'long' ? 'saq' : type.value, text: text.value.trim(), explanation: explanation.value.trim(), image_path: imagePath, status: status.value, long_answer: type.value === 'long', marks: 1, key_points: [] };
         if (!row.text) { toast('Write the question', true); return; }
         if (row.type === 'mcq') {
           const options = optionInputs.map((i) => i.value.trim());
@@ -751,6 +768,17 @@ function questionDialog(topic, question) {
           row.options = options;
           row.answer = options[radios.findIndex((r) => r.checked)];
           row.alt_answers = [];
+        } else if (type.value === 'long') {
+          const list = points.value.split('\n').map((line) => line.split(',').map((w) => w.trim().toLowerCase()).filter(Boolean)).filter((p) => p.length);
+          const need = Math.round(Number(marks.value));
+          if (!model.value.trim()) { toast('Write the model answer', true); return; }
+          if (!(need >= 1 && need <= 20)) { toast('Marks must be between 1 and 20', true); return; }
+          if (list.length < need) { toast(`Give at least ${need} points, one per line`, true); return; }
+          row.options = [];
+          row.answer = model.value.trim();
+          row.alt_answers = [];
+          row.marks = need;
+          row.key_points = list;
         } else {
           if (!answer.value.trim()) { toast('Give the answer', true); return; }
           row.options = [];
@@ -1116,6 +1144,40 @@ async function pageStats(main) {
 
   fill(main, pageHead('Statistics', 'Who has the app, how the question bank is used and how alarms go.', chips), body);
   await draw();
+}
+
+// ---------------------------------------------------------- drafts to check
+
+// Every draft in the bank in one place: questions held back until a person
+// has checked them. Publish the good ones here; open one to correct it.
+async function pageDrafts(main) {
+  const drafts = ok(await db.from('questions').select('*').eq('status', 'draft').is('deleted_at', null).order('topic_id').order('created_at').limit(1000));
+  const topics = ok(await db.from('topics').select('id, unit_id, name, section_id'));
+  const sections = ok(await db.from('sections').select('id, name'));
+  const topicOf = Object.fromEntries(topics.map((t) => [t.id, t]));
+  const sectionName = Object.fromEntries(sections.map((x) => [x.id, x.name]));
+  const groups = {};
+  drafts.forEach((q) => { (groups[q.topic_id] = groups[q.topic_id] || []).push(q); });
+  const publish = async (ids, done) => {
+    const saved = await attempt(async () => ok(await db.from('questions').update({ status: 'published' }).in('id', ids).select('id')), done);
+    if (saved) render();
+  };
+  fill(main,
+    pageHead('Drafts to check', 'Questions that are in the bank but hidden from the app until someone has checked them.'),
+    drafts.length === 0 && h('div', { class: 'card center muted' }, 'No drafts waiting.'),
+    drafts.length > 0 && h('p', { class: 'muted small', style: 'margin:-6px 0 14px' }, `${drafts.length} draft${drafts.length === 1 ? '' : 's'} in ${Object.keys(groups).length} topic${Object.keys(groups).length === 1 ? '' : 's'}. Read each one, correct it if needed (click it), then publish. The note under a question says where it came from and what to look at.`),
+    Object.entries(groups).map(([topicId, list]) => {
+      const t = topicOf[topicId] || { name: topicId, unit_id: '' };
+      return h('div', { class: 'section' },
+        h('div', { class: 'row spread', style: 'margin-bottom:10px' },
+          h('div', {}, h('h2', { style: 'margin:0' }, t.name), h('div', { class: 'muted small' }, sectionName[t.section_id] || '')),
+          h('div', { class: 'row' },
+            h('a', { href: `#/bank/${encodeURIComponent(t.unit_id)}/${encodeURIComponent(topicId)}` }, 'Open topic'),
+            h('button', { onclick: () => confirmDialog(`Publish all ${list.length} in "${t.name}"?`, 'They become visible in the app at its next sync. Only do this after reading them.', 'Publish all', () => publish(list.map((q) => q.id), 'Published')) }, `Publish all ${list.length}`))),
+        h('div', { class: 'list' }, list.map((q, i) => h('div', { style: 'position:relative' },
+          questionCard(t.id ? t : { id: topicId, name: t.name }, q, i + 1),
+          h('button', { class: 'primary small', style: 'position:absolute;right:14px;bottom:14px', onclick: (e) => { e.stopPropagation(); publish([q.id], 'Published'); } }, 'Publish')))));
+    }));
 }
 
 // -------------------------------------------------------- flagged questions
