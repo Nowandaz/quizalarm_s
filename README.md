@@ -88,6 +88,7 @@ supabase/migrations/   the database, in order:
   0012_access_levels_and_flags.sql  guest/free/paid topics, Pro and Ultra, flagged questions
   0013_avatars_storage.sql  private storage for profile pictures
   0014_usage_stats.sql   anonymous phone count and the Statistics page
+  0015_install_devices.sql  the phone's make and model, per account and per model
 supabase/seed.sql      the app's bundled questions, as rows (generated)
 supabase/tests/        security checks, run on a local PostgreSQL
 tools/make_seed.py     regenerates seed.sql from the app's JSON banks

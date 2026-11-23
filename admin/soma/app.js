@@ -909,6 +909,7 @@ async function pageStats(main) {
   const draw = async () => {
     fill(chips, [7, 30, 90].map((d) => h('button', { class: d === days ? 'chip on' : 'chip', onclick: () => { days = d; attempt(draw); } }, `Last ${d} days`)));
     const x = ok(await db.rpc('admin_usage_stats', { days }));
+    const models = ((await attempt(async () => ok(await db.rpc('admin_devices', { days }))) || {}).models) || [];
     const p = x.phones; const a = x.accounts; const q = x.questions; const al = x.alarms;
     const level = (name) => p.by_level[name] || 0;
     const ended = al.answered + al.timed_out + al.never_rang;
@@ -928,6 +929,12 @@ async function pageStats(main) {
           h('div', { class: 'card' }, h('h3', {}, 'App versions on those phones'),
             h('table', {}, h('tbody', {}, p.by_version.map((v) => h('tr', {}, h('td', {}, v.version || 'unknown'), h('td', {}, many(v.phones, 'phone')))))),
             p.by_version.length === 0 && h('p', { class: 'muted small' }, 'No phone has reported yet.'))),
+        h('div', { class: 'card', style: 'margin-top:12px' }, h('h3', {}, 'Phone models'),
+          h('p', { class: 'muted small' }, 'Which phones the app is on, most common first. Missed alarms help spot a model that keeps failing; they are only reported by people who share diagnostics.'),
+          h('div', { class: 'scroll' }, h('table', {},
+            models.length > 0 && h('thead', {}, h('tr', {}, h('th', {}, 'Phone'), h('th', {}, 'Phones'), h('th', {}, 'Without an account'), h('th', {}, 'Missed alarms'), h('th', {}, 'Last opened'))),
+            h('tbody', {}, models.map((m) => h('tr', {}, h('td', {}, m.device), h('td', {}, m.phones), h('td', {}, m.without_account), h('td', {}, m.alarms_missed), h('td', { class: 'small muted' }, when(m.last_seen))))))),
+          models.length === 0 && h('p', { class: 'muted small' }, 'No phone has reported yet.')),
         h('p', { class: 'muted small', style: 'margin-top:10px' }, 'How phones are counted: each phone sends a small anonymous "I am here" message about once a day. Phones still on an older version of the app send nothing and are not counted.')),
 
       h('div', { class: 'section' }, h('h2', {}, 'Accounts'),
@@ -1050,6 +1057,10 @@ async function pageUsers(main) {
   const tiers = ok(await db.from('tiers').select('id, name').order('sort_order'));
   const load = async () => {
     const users = ok(await db.rpc('admin_list_users', { search: search.value.trim(), max_rows: 200, skip: 0 }));
+    // The phones each account is signed in on (from the app's daily message).
+    const phones = {};
+    ((await attempt(async () => ok(await db.rpc('admin_devices', { days: 365 }))) || {}).by_account || [])
+      .forEach((d) => { (phones[d.user_id] = phones[d.user_id] || []).push(d); });
     fill(body, ...users.map((u) => {
       const mine = u.id === state.user.id;
       const role = h('select', { style: 'width:auto', onchange: async (e) => {
@@ -1081,19 +1092,24 @@ async function pageUsers(main) {
           u.display_name && h('div', { class: 'muted small' }, u.display_name)),
         h('td', {}, role),
         h('td', {}, h('div', { class: 'row' }, plan, expiry)),
+        h('td', { class: 'small', style: 'min-width:210px' }, (phones[u.id] || []).length === 0
+          ? h('span', { class: 'muted' }, 'Not seen yet')
+          : phones[u.id].map((d) => h('div', { style: 'margin:2px 0' },
+            h('div', {}, d.device || 'Unknown phone'),
+            h('div', { class: 'muted' }, `app ${d.version || '?'} · last opened ${when(d.last_seen)}`)))),
         h('td', { class: 'small' }, when(u.created_at)),
         h('td', { class: 'small' }, when(u.last_sign_in_at)),
         h('td', {}, u.answers), h('td', {}, u.ai_calls),
         h('td', {}, !mine && h('button', { class: 'icon-btn danger', title: 'Delete account', onclick: () => confirmDialog(`Delete ${u.email}?`, 'The account and everything that belongs to it (answers, sessions, backup, AI questions) is removed for good.', 'Delete account', async () => { await attempt(async () => ok(await db.rpc('admin_delete_user', { target: u.id })), 'Account deleted'); load(); }) }, icon('trash'))));
-    }), users.length === 0 ? h('tr', {}, h('td', { colspan: 8, class: 'muted' }, 'No accounts match.')) : '');
+    }), users.length === 0 ? h('tr', {}, h('td', { colspan: 9, class: 'muted' }, 'No accounts match.')) : '');
   };
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => attempt(load), 300); });
 
   fill(main, 
-    pageHead('Accounts', 'Everyone who has signed up. Admins manage the question bank; owners can do everything on this site.'),
+    pageHead('Accounts', 'Everyone who has signed up, and the phone each account uses. Admins manage the question bank; owners can do everything on this site.'),
     h('div', { style: 'margin-bottom:12px' }, search),
     h('div', { class: 'card table-wrap', style: 'padding:6px' },
-      h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Account'), h('th', {}, 'Role'), h('th', {}, 'Plan'), h('th', {}, 'Joined'), h('th', {}, 'Last sign-in'), h('th', {}, 'Answers'), h('th', {}, 'AI calls'), h('th', {}))), body)));
+      h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Account'), h('th', {}, 'Role'), h('th', {}, 'Plan'), h('th', {}, 'Phone'), h('th', {}, 'Joined'), h('th', {}, 'Last sign-in'), h('th', {}, 'Answers'), h('th', {}, 'AI calls'), h('th', {}))), body)));
   await load();
 }
 
