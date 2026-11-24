@@ -919,7 +919,22 @@ function diagnosticsBox(d) {
     row('App was force-stopped', yesNo(d.force_stopped, false)),
     row('Why Android last stopped the app', (d.app_exits || []).length
       ? d.app_exits.map((e) => `${EXIT_REASONS[e.reason] || 'reason ' + e.reason} (${whenExactly(e.at)})${e.description ? ': ' + e.description : ''}`).join('; ')
-      : 'not recorded'));
+      : 'not recorded'),
+    // What the app noted about its own crashes (app 1.0.2 and later).
+    ...crashRows(d, row));
+}
+function crashRows(d, row) {
+  const pre = (text) => h('pre', { class: 'trace' }, text);
+  const rows = [];
+  for (const e of d.app_exits || []) {
+    if (e.trace) rows.push(row(`Android's record of the ${EXIT_REASONS[e.reason] || 'ending'} (${whenExactly(e.at)})`, pre(e.trace)));
+  }
+  const c = d.android_crash;
+  if (c && c.text) rows.push(row(`Last crash in the app's Android code (${whenExactly(c.at)})`, pre(c.text)));
+  for (const e of d.app_errors || []) {
+    rows.push(row(`App error (${whenExactly(e.at)})`, pre(`${e.error || ''}\n${e.stack || ''}`)));
+  }
+  return rows;
 }
 // Android's ApplicationExitInfo reasons.
 const EXIT_REASONS = {

@@ -206,3 +206,6 @@ tr.click { cursor: pointer; }
 .tree-subunit .tree-section:last-child { margin-bottom: 4px; }
 .tree-head { margin-bottom: 10px; gap: 12px; }
 .tree-head h3 { margin: 0; }
+
+/* Crash details in an alarm report. */
+pre.trace { margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; }
