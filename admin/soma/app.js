@@ -1523,6 +1523,7 @@ async function pageEmails(main) {
   }
   const versions = ok(await db.rpc('admin_email_versions')) || [];
   const campaigns = ok(await db.from('email_campaigns').select('*').order('created_at', { ascending: false }));
+  const waiting = ok(await db.from('ios_waitlist').select('*').order('created_at', { ascending: false }));
 
   const audience = h('select', {}, Object.entries(EMAIL_AUDIENCES).map(([value, text]) => h('option', { value }, text)));
   const version = h('select', {}, versions.map((v) => h('option', { value: v.version }, `${v.version} (${v.accounts} account${v.accounts === 1 ? '' : 's'})`)));
@@ -1597,6 +1598,22 @@ async function pageEmails(main) {
       h('div', { class: 'row' },
         h('button', { class: 'right', disabled: !ready, onclick: sendTest }, 'Send a test to me'),
         h('button', { class: 'primary', disabled: !ready, onclick: sendAll }, icon('mail'), 'Send'))),
+    h('div', { class: 'card', style: 'margin-bottom:12px' },
+      h('div', { class: 'row spread' },
+        h('div', {}, h('h3', {}, `iPhone waiting list (${waiting.length})`),
+          h('div', { class: 'muted small', style: 'margin-top:2px' }, 'People who left their email on the home page to be told when the iPhone app is out.')),
+        waiting.length > 0 && h('button', { onclick: async () => {
+          try { await navigator.clipboard.writeText(waiting.map((w) => w.email).join(', ')); toast('Addresses copied'); }
+          catch (error) { toast('Could not copy. Select them by hand.', true); }
+        } }, 'Copy addresses')),
+      waiting.length === 0
+        ? h('p', { class: 'muted small', style: 'margin:10px 0 0' }, 'Nobody has joined yet.')
+        : h('div', { class: 'waitlist' }, waiting.map((w) => h('div', { class: 'row spread waitlist-row' },
+          h('div', {}, h('span', {}, w.email), h('span', { class: 'muted small', style: 'margin-left:10px' }, `joined ${when(w.created_at)}`)),
+          h('button', { class: 'icon-btn', title: 'Remove from the list', onclick: () => confirmDialog('Remove this address?', `${w.email} will no longer be on the iPhone waiting list.`, 'Remove', async () => {
+            await attempt(async () => ok(await db.from('ios_waitlist').delete().eq('email', w.email)), 'Removed');
+            render();
+          }) }, icon('trash')))))),
     h('h3', { style: 'margin:18px 0 8px' }, 'Sent'),
     campaigns.length === 0 && h('div', { class: 'card center muted' }, 'No email has been sent yet.'),
     h('div', { class: 'list' }, campaigns.map((c) => h('div', { class: 'card' },

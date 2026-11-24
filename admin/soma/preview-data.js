@@ -24,6 +24,7 @@
       { id: 'pathology-spotters', section_id: 'pathology-sec-blood-film', unit_id: 'pathology', name: 'Spotters', access: 'paid', sort_order: 0, deleted_at: null },
     ],
     questions: [],
+    ios_waitlist: [{ email: 'amina@example.com', created_at: days(0.5) }, { email: 'brian.k@example.com', created_at: days(2) }, { email: 'wanjiru@example.com', created_at: days(3) }],
     email_campaigns: [{ id: 'e1', created_at: days(1), subject: "Brain O' Clock 1.0.1 is out", body: 'Hello,\n\nA new version is ready, with Pharmacology questions and long answer practice.', audience: 'older', app_version: '', total: 23, sent: 22, failed: 1, status: 'done', error: '', button_text: 'Get the update', button_url: 'https://brainoclock.onrender.com/#download' }],
     announcements: [{ id: 2, title: 'Pharmacology topics uploaded', body: 'Autonomic nervous system and Autacoids now have questions. Open Banks to practise.', audience: 'all', link: '', published_at: days(0.2), expires_at: null }, { id: 1, title: 'Pro is 20% off this week', body: 'Use the code EXAMS when you upgrade.', audience: 'free', link: '', published_at: days(9), expires_at: days(2) }],
     sections: [

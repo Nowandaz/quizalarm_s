@@ -209,3 +209,7 @@ tr.click { cursor: pointer; }
 
 /* Crash details in an alarm report. */
 pre.trace { margin: 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; }
+
+/* The iPhone waiting list on the Emails page. */
+.waitlist { margin-top: 10px; max-height: 320px; overflow: auto; }
+.waitlist-row { padding: 7px 0; border-top: 1px solid var(--line, rgba(0,0,0,.08)); }
