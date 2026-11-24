@@ -1,8 +1,8 @@
 import {makeProject} from '@motion-canvas/core';
 
 import './global.css';
-import brainoclock from './scenes/brainoclock?scene';
+import film from './scenes/film?scene';
 
 export default makeProject({
-  scenes: [brainoclock],
+  scenes: [film],
 });
