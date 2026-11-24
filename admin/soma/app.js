@@ -1033,6 +1033,8 @@ function crashRows(d, row) {
   for (const e of d.app_exits || []) {
     if (e.trace) rows.push(row(`Android's record of the ${EXIT_REASONS[e.reason] || 'ending'} (${whenExactly(e.at)})`, pre(e.trace)));
   }
+  const revived = d.ring_revivals;
+  if (revived && revived.count) rows.push(row('Alarm brought back after the phone closed the app', `${revived.count} time${revived.count === 1 ? '' : 's'}, last ${whenExactly(revived.last_at)}`));
   const c = d.android_crash;
   if (c && c.text) rows.push(row(`Last crash in the app's Android code (${whenExactly(c.at)})`, pre(c.text)));
   for (const e of d.app_errors || []) {
