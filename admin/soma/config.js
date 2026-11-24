@@ -8,4 +8,6 @@ window.BRAINWAKE_CONFIG = {
   supabaseUrl: 'https://zsplxgvizlndnofsokxw.supabase.co',
   supabaseKey: 'sb_publishable_bE2OwJPR9O9mhzRi-HVPLw_lh7G7-LB',
   imageBucket: 'question-images',
+  // The API server (it sends the emails written on the Emails page).
+  apiUrl: 'https://jarvis-norys.austriaeast.cloudapp.azure.com/brainwake',
 };

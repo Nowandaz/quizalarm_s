@@ -58,6 +58,7 @@ const ICONS = {
   card: 'M3 6h18v12H3zM3 10h18M7 15h4',
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
   bell: 'M6 16V11a6 6 0 0112 0v5l2 2H4zM10 20a2 2 0 004 0',
+  mail: 'M4 6h16v12H4zM4 7l8 6 8-6',
   chart: 'M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3',
   lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3',
 };
@@ -293,6 +294,7 @@ function renderShell() {
         link('drafts', 'Drafts to check', 'edit'),
         link('flags', 'Flagged questions', 'flag'),
         link('messages', 'Messages to users', 'bell'),
+        isOwner() && link('emails', 'Emails', 'mail'),
         link('alarms', 'Alarm reports', 'alarm'),
         isOwner() && link('users', 'Accounts', 'users'),
         isOwner() && link('payments', 'Payments', 'card'),
@@ -312,6 +314,7 @@ function renderShell() {
     drafts: () => pageDrafts(main),
     flags: () => pageFlags(main),
     messages: () => pageMessages(main),
+    emails: () => (isOwner() ? pageEmails(main) : pageDashboard(main)),
     alarms: () => pageAlarms(main),
     users: () => (isOwner() ? pageUsers(main) : pageDashboard(main)),
     payments: () => (isOwner() ? pagePayments(main) : pageDashboard(main)),
@@ -1366,6 +1369,145 @@ function messageDialog(message) {
         if (saved) { close(); render(); }
       } }, message ? 'Save' : 'Send')),
   ]);
+}
+
+// ------------------------------------------------------------------ emails
+
+// Emails to people with accounts, in the app's look, sent by the API
+// server through the project's mailbox. For news that must reach people
+// who are not opening the app: "a new version is out".
+const EMAIL_AUDIENCES = {
+  older: 'Accounts whose phone is on an older app version',
+  version: 'Accounts on one app version...',
+  all: 'Every account',
+  free: 'Free accounts',
+  paid: 'Pro and Ultra accounts',
+  custom: 'Addresses I type in',
+};
+
+async function api(path, body) {
+  const { data } = await db.auth.getSession();
+  const token = data.session && data.session.access_token;
+  let response;
+  try {
+    response = await fetch(`${CONFIG.apiUrl}${path}`, {
+      method: body ? 'POST' : 'GET',
+      headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    throw new Error('The server could not be reached.');
+  }
+  const reply = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = Array.isArray(reply.detail) ? reply.detail.map((d) => d.msg).join('; ') : reply.detail;
+    const failure = new Error(detail || `The server answered ${response.status}.`);
+    failure.status = response.status;
+    throw failure;
+  }
+  return reply;
+}
+
+async function pageEmails(main) {
+  let status = null;
+  let problem = '';
+  if (CONFIG.demo) status = { ready: true, from: 'brainonclock@gmail.com', your_email: 'you@example.com', max_recipients: 400 };
+  else {
+    try { status = await api('/v1/admin/email/status'); } catch (error) {
+      problem = error.status === 404
+        ? 'The server does not have the email feature yet. Deploy the API again (deploy\\push.ps1), then reload this page.'
+        : error.message;
+    }
+  }
+  const versions = ok(await db.rpc('admin_email_versions')) || [];
+  const campaigns = ok(await db.from('email_campaigns').select('*').order('created_at', { ascending: false }));
+
+  const audience = h('select', {}, Object.entries(EMAIL_AUDIENCES).map(([value, text]) => h('option', { value }, text)));
+  const version = h('select', {}, versions.map((v) => h('option', { value: v.version }, `${v.version} (${v.accounts} account${v.accounts === 1 ? '' : 's'})`)));
+  const typed = h('textarea', { placeholder: 'one@example.com, two@example.com' });
+  const subject = h('input', { type: 'text', maxlength: 120, placeholder: 'Brain O\' Clock 1.0.2 is out' });
+  const body = h('textarea', { maxlength: 5000, style: 'min-height:170px', placeholder: 'Hello,\n\nA new version of Brain O\' Clock is ready...' });
+  const buttonText = h('input', { type: 'text', maxlength: 40, placeholder: 'Get the update' });
+  const buttonUrl = h('input', { type: 'url', placeholder: 'https://brainoclock.onrender.com/#download' });
+  const count = h('div', { class: 'muted small' });
+  const versionField = field('App version', version, 'Goes by the version each account\'s phone last reported.');
+  const typedField = field('Addresses', typed, 'Separate them with commas, spaces or new lines.');
+
+  const addresses = () => typed.value.split(/[\s,;]+/).map((a) => a.trim()).filter(Boolean);
+  const draft = () => ({
+    subject: subject.value.trim(), body: body.value.trim(), audience: audience.value,
+    app_version: audience.value === 'version' ? version.value : '',
+    emails: audience.value === 'custom' ? addresses() : [],
+    button_text: buttonText.value.trim(), button_url: buttonUrl.value.trim(),
+  });
+  let people = 0;
+  const recount = async () => {
+    versionField.style.display = audience.value === 'version' ? '' : 'none';
+    typedField.style.display = audience.value === 'custom' ? '' : 'none';
+    if (audience.value === 'custom') people = new Set(addresses().map((a) => a.toLowerCase())).size;
+    else {
+      try { people = ok(await db.rpc('admin_email_count', { audience: audience.value, app_version: audience.value === 'version' ? (version.value || '') : '' })) || 0; }
+      catch (error) { people = 0; }
+    }
+    count.textContent = people === 1 ? 'This goes to 1 person.' : `This goes to ${people} people.`;
+  };
+  audience.onchange = recount; version.onchange = recount; typed.oninput = recount;
+
+  const checked = () => {
+    const d = draft();
+    if (d.subject.length < 3) { toast('Write a subject', true); return null; }
+    if (d.body.length < 3) { toast('Write the message', true); return null; }
+    if (!!d.button_text !== !!d.button_url) { toast('A button needs both its text and its address', true); return null; }
+    if (d.button_url && !/^https:\/\//.test(d.button_url)) { toast('The button\'s address must start with https://', true); return null; }
+    return d;
+  };
+  const sendTest = async () => {
+    const d = checked(); if (!d) return;
+    const reply = await attempt(() => api('/v1/admin/email/send', { ...d, test: true }));
+    if (reply) toast(`Test sent to ${reply.to}`);
+  };
+  const sendAll = () => {
+    const d = checked(); if (!d) return;
+    if (!people) { toast('Nobody matches, so there is nothing to send', true); return; }
+    confirmDialog(`Send to ${people} ${people === 1 ? 'person' : 'people'}?`,
+      `"${d.subject}" goes out now and cannot be taken back. Send yourself a test first if you have not.`, 'Send', async () => {
+        const reply = await attempt(() => api('/v1/admin/email/send', d));
+        if (reply) { toast(`Sending to ${reply.recipients} ${reply.recipients === 1 ? 'person' : 'people'}`); render(); }
+      });
+  };
+
+  const ready = status && status.ready;
+  fill(main,
+    pageHead('Emails', 'Write to people with accounts, in the app\'s look. For news that must reach people who are not opening the app.'),
+    problem && h('div', { class: 'card', style: 'margin-bottom:12px' }, h('h3', {}, 'Emails cannot be sent yet'), h('p', { class: 'small muted', style: 'margin:6px 0 0' }, problem)),
+    status && !status.ready && h('div', { class: 'card', style: 'margin-bottom:12px' },
+      h('h3', {}, 'The mailbox is not set up on the server'),
+      h('p', { class: 'small muted', style: 'margin:6px 0 0' }, 'Add SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASSWORD to the file api\\.env on your laptop (api\\.env.example shows how), then deploy with: deploy\\push.ps1 -Server <address> -WithEnv')),
+    h('div', { class: 'card stack', style: 'margin-bottom:12px' },
+      h('h3', {}, 'New email'),
+      ready && h('p', { class: 'small muted', style: 'margin:0' }, `Sent from ${status.from}, one copy per person. Up to ${status.max_recipients} people a day (the mailbox's limit). People who unsubscribed are left out.`),
+      field('Who gets it', audience), versionField, typedField, count,
+      field('Subject', subject),
+      field('Message', body, 'Plain words. Leave an empty line between paragraphs.'),
+      h('div', { class: 'row' },
+        h('div', { class: 'grow' }, field('Button text', buttonText, 'Optional.')),
+        h('div', { class: 'grow' }, field('Button opens', buttonUrl, 'Optional. Starts with https://'))),
+      h('div', { class: 'row' },
+        h('button', { class: 'right', disabled: !ready, onclick: sendTest }, 'Send a test to me'),
+        h('button', { class: 'primary', disabled: !ready, onclick: sendAll }, icon('mail'), 'Send'))),
+    h('h3', { style: 'margin:18px 0 8px' }, 'Sent'),
+    campaigns.length === 0 && h('div', { class: 'card center muted' }, 'No email has been sent yet.'),
+    h('div', { class: 'list' }, campaigns.map((c) => h('div', { class: 'card' },
+      h('div', { class: 'row' }, h('h3', {}, c.subject),
+        h('span', { class: c.status === 'done' ? 'pill ok' : 'pill' }, c.status === 'sending' ? 'Sending...' : c.status === 'done' ? 'Sent' : 'Stopped early'),
+        h('span', { class: 'pill' }, (EMAIL_AUDIENCES[c.audience] || c.audience).replace('...', '') + (c.app_version ? ` ${c.app_version}` : ''))),
+      h('p', { class: 'small', style: 'margin:6px 0 0;white-space:pre-wrap' }, c.body.length > 240 ? `${c.body.slice(0, 240)}...` : c.body),
+      h('div', { class: 'muted small', style: 'margin-top:6px' }, `${when(c.created_at)} · ${c.sent} of ${c.total} sent`, c.failed > 0 && ` · ${c.failed} not sent`, c.error && ` (${c.error})`)))));
+  await recount();
+  // While something is still going out, show its progress.
+  if (campaigns.some((c) => c.status === 'sending' && Date.now() - new Date(c.created_at) < 30 * 60 * 1000)) {
+    setTimeout(() => { if (location.hash.includes('emails') && !document.querySelector('.overlay') && !subject.value && !body.value) render(); }, 5000);
+  }
 }
 
 // ------------------------------------------------------------ app versions

@@ -24,6 +24,7 @@
       { id: 'pathology-spotters', section_id: 'pathology-sec-blood-film', unit_id: 'pathology', name: 'Spotters', access: 'paid', sort_order: 0, deleted_at: null },
     ],
     questions: [],
+    email_campaigns: [{ id: 'e1', created_at: days(1), subject: "Brain O' Clock 1.0.1 is out", body: 'Hello,\n\nA new version is ready, with Pharmacology questions and long answer practice.', audience: 'older', app_version: '', total: 23, sent: 22, failed: 1, status: 'done', error: '', button_text: 'Get the update', button_url: 'https://brainoclock.onrender.com/#download' }],
     announcements: [{ id: 2, title: 'Pharmacology topics uploaded', body: 'Autonomic nervous system and Autacoids now have questions. Open Banks to practise.', audience: 'all', link: '', published_at: days(0.2), expires_at: null }, { id: 1, title: 'Pro is 20% off this week', body: 'Use the code EXAMS when you upgrade.', audience: 'free', link: '', published_at: days(9), expires_at: days(2) }],
     sections: [
       { id: 'pharmacology-sec-ans', unit_id: 'pharmacology', parent_id: null, kind: 'section', name: 'Autonomic nervous system', description: '', sort_order: 0, deleted_at: null },
@@ -144,6 +145,8 @@
   ];
 
   const rpcs = {
+    admin_email_versions: () => [{ version: '1.0.2', accounts: 14 }, { version: '1.0.1', accounts: 9 }, { version: '1.0.0', accounts: 23 }],
+    admin_email_count: (a) => ({ older: 32, version: 23, all: 61, free: 44, paid: 17 }[a.audience] || 0),
     admin_devices: () => ({
       by_account: [{ user_id: 'u1', device: 'Samsung SM-A155F (Android 15)', version: '1.1.0+3', platform: 'android', level: 'pro', first_seen: days(20), last_seen: days(0.1) },
         { user_id: 'u1', device: 'Tecno Camon 30 (Android 14)', version: '1.0.0+1', platform: 'android', level: 'pro', first_seen: days(60), last_seen: days(9) }],

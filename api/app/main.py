@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from . import payments, tasks
 from .config import Settings
+from .mailer import SmtpMailer, build_router as build_mail_router
 from .providers import NoProviderError, ask
 from .store import Store, StoreError, User
 
@@ -72,7 +73,8 @@ h1{font-size:26px;margin:0 0 8px}p{color:#a1a1aa;margin:0;max-width:320px;line-h
 </div></body></html>"""
 
 
-def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None = None,
+               mailer=None, mail_gap: float | None = None) -> FastAPI:
     """Builds the server. Tests pass their own settings and a fake network."""
 
     @asynccontextmanager
@@ -81,6 +83,8 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
         app.state.settings = settings or Settings.from_env()
         app.state.store = Store(app.state.settings, app.state.http)
         app.state.recent = defaultdict(deque)  # user id -> times of recent calls
+        app.state.mailer = mailer or SmtpMailer(app.state.settings)
+        app.state.mail_tasks = set()  # emails still being sent
         yield
         if http is None:
             await app.state.http.aclose()
@@ -123,6 +127,8 @@ def create_app(settings: Settings | None = None, http: httpx.AsyncClient | None 
 
     Caller = Annotated[User, Depends(current_user)]
     app.include_router(payments.build_router(Depends(current_user)))
+    app.include_router(build_mail_router(
+        Depends(current_user), **({} if mail_gap is None else {"gap_seconds": mail_gap})))
 
     async def allowance(store: Store, user: User) -> dict:
         config = await store.config()
