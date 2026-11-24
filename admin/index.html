@@ -12,7 +12,7 @@
   <link rel="icon" href="brand/favicon.png">
   <link rel="preload" href="brand/Outfit.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preload" href="brand/PlusJakartaSans.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="site.css?v=3">
+  <link rel="stylesheet" href="site.css?v=4">
 </head>
 <body>
 
@@ -33,6 +33,16 @@
   <section class="hero">
     <div class="hero-copy">
       <p class="kicker">Android app for medical students</p>
+      <!-- iPhone: not out yet. Takes an address to write to when it is. -->
+      <div class="ios" id="ios">
+        <span>On iPhone? It's coming.</span>
+        <button type="button" class="ios-open" id="ios-open">Join the waiting list</button>
+        <form class="ios-form" id="ios-form" hidden novalidate>
+          <input type="email" id="ios-email" autocomplete="email" inputmode="email" placeholder="Your email" aria-label="Your email" required>
+          <button type="submit">Tell me</button>
+        </form>
+        <span class="ios-done" id="ios-done" role="status" hidden></span>
+      </div>
       <h1>The alarm you can't snooze your way out of.</h1>
       <p class="lede">Brain O' Clock keeps ringing until you answer revision questions correctly.
         No off button. No easy snooze. You are up, and your first questions of the day are already done.</p>
@@ -273,6 +283,6 @@
 </footer>
 
 <script src="soma/config.js?v=20261124"></script>
-<script src="site.js?v=3"></script>
+<script src="site.js?v=4"></script>
 </body>
 </html>

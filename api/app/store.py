@@ -114,6 +114,35 @@ class Store:
         self._users[digest] = (time.monotonic() + CACHE_SECONDS, user)
         return user
 
+    # -------------------------------------------------------------- emails
+
+    async def role_of(self, user_id: str) -> str:
+        """'user', 'admin' or 'owner'. Asked each time: it guards sending."""
+        rows = (await self._rest("GET", "/profiles", params={"id": f"eq.{user_id}", "select": "role"})).json()
+        return (rows[0].get("role") or "user") if rows else "user"
+
+    async def email_recipients(self, audience: str, app_version: str) -> list[dict]:
+        """The accounts an email goes to: [{user_id, email}]."""
+        response = await self._rest(
+            "POST", "/rpc/email_recipients", json={"audience": audience, "app_version": app_version}
+        )
+        return [row for row in response.json() if row.get("email")]
+
+    async def add_campaign(self, row: dict) -> str:
+        response = await self._rest(
+            "POST", "/email_campaigns", json=row, headers={"Prefer": "return=representation"}
+        )
+        return response.json()[0]["id"]
+
+    async def update_campaign(self, campaign: str, **changes) -> None:
+        try:
+            await self._rest("PATCH", "/email_campaigns", params={"id": f"eq.{campaign}"}, json=changes)
+        except StoreError:
+            pass  # the emails matter more than the count shown for them
+
+    async def stop_emails(self, user_id: str) -> None:
+        await self._rest("PATCH", "/profiles", params={"id": f"eq.{user_id}"}, json={"email_updates": False})
+
     # ------------------------------------------------------------ settings
 
     async def config(self) -> dict:
