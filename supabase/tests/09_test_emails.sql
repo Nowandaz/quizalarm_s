@@ -43,6 +43,30 @@ begin
   assert (select count(*) from public.email_recipients('nonsense')) = 0;
 end $$;
 
+-- The iPhone waiting list: anyone may join, only admins read it.
+set local role anon;
+do $$
+begin
+  assert public.join_ios_waitlist('  Wait@X.test ');
+  assert public.join_ios_waitlist('wait@x.test'), 'joining twice is fine';
+  assert not public.join_ios_waitlist('not an address');
+  assert not public.join_ios_waitlist(null);
+  begin
+    assert (select count(*) from public.ios_waitlist) = 0, 'a visitor read the list';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'ok: a visitor can join the iPhone waiting list but not read it';
+end $$;
+reset role;
+do $$
+declare got text[];
+begin
+  select array_agg(email) into got from public.email_recipients('waitlist');
+  assert got = array['wait@x.test'], 'waitlist: ' || coalesce(got::text, 'null');
+  assert not exists (select 1 from public.email_recipients('all') where email = 'wait@x.test');
+  raise notice 'ok: the waiting list is its own audience, stored once in lower case';
+end $$;
+
 -- Only admins may count, and nobody signed in may read the addresses.
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'e0000000-0000-0000-0000-000000000001', true);

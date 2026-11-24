@@ -47,6 +47,17 @@ code { font: 0.92em ui-monospace, Menlo, Consolas, monospace; background: var(--
 .lede { font-size: clamp(17px, 1.5vw, 20px); max-width: 34em; }
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 22px; margin: 28px 0 16px; }
 @media (max-width: 900px) { .hero { grid-template-columns: minmax(0, 1fr); } .stage { order: 2; } }
+/* The iPhone waiting list: one quiet line under the download button. */
+.ios { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: -8px 0 18px; font-size: 14px; color: var(--muted); }
+.ios-open { background: none; border: 0; padding: 0 0 1px; font: inherit; color: var(--ink); cursor: pointer; border-bottom: 1px solid var(--muted); }
+.ios-open:hover { color: var(--blue); border-color: var(--blue); }
+.ios-form { display: flex; gap: 8px; }
+.ios-form[hidden], .ios-done[hidden] { display: none; }
+.ios-form input { width: min(220px, 52vw); padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: var(--ink); font: inherit; }
+.ios-form input:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+.ios-form button { padding: 8px 14px; border-radius: 10px; border: 0; background: var(--ink); color: #05060a; font: inherit; font-weight: 700; cursor: pointer; }
+.ios-form button[disabled] { opacity: .6; }
+.ios-done { color: var(--ink); }
 
 /* ------------------------------------------------------ the 3D phone */
 /* One phone, used everywhere. --n is its width in pixels (a plain number).

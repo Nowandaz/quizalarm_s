@@ -234,6 +234,34 @@
     onScroll();
   }
 
+  // ------------------------------------------- the iPhone waiting list
+  var iosOpen = document.getElementById('ios-open');
+  var iosForm = document.getElementById('ios-form');
+  var iosDone = document.getElementById('ios-done');
+  if (iosOpen && iosForm && iosDone) {
+    var iosEmail = document.getElementById('ios-email');
+    var say = function (text) { iosDone.textContent = text; iosDone.hidden = false; };
+    iosOpen.addEventListener('click', function () {
+      iosOpen.hidden = true; iosForm.hidden = false; iosEmail.focus();
+    });
+    iosForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var address = iosEmail.value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) { say('That does not look like an email address.'); return; }
+      if (!config.supabaseUrl) { say('Could not save that just now. Try again later.'); return; }
+      var send = iosForm.querySelector('button');
+      send.disabled = true;
+      fetch(config.supabaseUrl + '/rest/v1/rpc/join_ios_waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: config.supabaseKey, Authorization: 'Bearer ' + config.supabaseKey },
+        body: JSON.stringify({ address: address }),
+      }).then(function (r) { return r.ok ? r.json() : false; }).then(function (ok) {
+        if (ok === true) { iosForm.hidden = true; say('You are on the list. We will email you when it is out.'); }
+        else { send.disabled = false; say('Could not save that just now. Try again later.'); }
+      }).catch(function () { send.disabled = false; say('Could not save that just now. Try again later.'); });
+    });
+  }
+
   // ------------------------------------- live details from the database
   function read(path) {
     if (!config.supabaseUrl) return Promise.reject(new Error('no server'));

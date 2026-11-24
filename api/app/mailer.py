@@ -33,7 +33,7 @@ SITE = "https://brainoclock.onrender.com"
 MAX_RECIPIENTS = 400
 # Seconds between two emails, so the mailbox is not taken for a spammer.
 GAP_SECONDS = 1.5
-AUDIENCES = ("all", "free", "paid", "version", "older", "custom")
+AUDIENCES = ("all", "free", "paid", "version", "older", "waitlist", "custom")
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 

@@ -1483,6 +1483,7 @@ const EMAIL_AUDIENCES = {
   all: 'Every account',
   free: 'Free accounts',
   paid: 'Pro and Ultra accounts',
+  waitlist: 'People on the iPhone waiting list',
   custom: 'Addresses I type in',
 };
 

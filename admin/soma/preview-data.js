@@ -146,7 +146,7 @@
 
   const rpcs = {
     admin_email_versions: () => [{ version: '1.0.2', accounts: 14 }, { version: '1.0.1', accounts: 9 }, { version: '1.0.0', accounts: 23 }],
-    admin_email_count: (a) => ({ older: 32, version: 23, all: 61, free: 44, paid: 17 }[a.audience] || 0),
+    admin_email_count: (a) => ({ older: 32, version: 23, all: 61, free: 44, paid: 17, waitlist: 12 }[a.audience] || 0),
     admin_devices: () => ({
       by_account: [{ user_id: 'u1', device: 'Samsung SM-A155F (Android 15)', version: '1.1.0+3', platform: 'android', level: 'pro', first_seen: days(20), last_seen: days(0.1) },
         { user_id: 'u1', device: 'Tecno Camon 30 (Android 14)', version: '1.0.0+1', platform: 'android', level: 'pro', first_seen: days(60), last_seen: days(9) }],
