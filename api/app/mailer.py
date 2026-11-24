@@ -199,7 +199,10 @@ def build_router(caller, gap_seconds: float = GAP_SECONDS) -> APIRouter:
             return 0, len(people), error
         try:
             for index, person in enumerate(people):
-                link = unsubscribe_link(settings, person.get("user_id") or "")
+                # No "stop these emails" link for now (the owner's choice:
+                # people must not miss key emails such as a new version).
+                # To bring it back: link = unsubscribe_link(settings, person.get("user_id") or "")
+                link = ""
                 text, page = render(body.subject, body.body, body.button_text, body.button_url, link)
                 try:
                     await asyncio.to_thread(mailer.send, person["email"], body.subject, text, page, link)

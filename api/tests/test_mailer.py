@@ -146,10 +146,9 @@ def test_sending_writes_to_everyone_once_and_records_it(client, world, mailbox):
     first = mailbox.sent[0]
     assert "A new version is ready.<br>It fixes alarms." in first["page"]
     assert 'href="https://brainoclock.onrender.com/#download"' in first["page"] and "Get it" in first["page"]
-    # Each person gets their own way out.
-    link = f"https://api.test/brainwake/unsubscribe?u={USER}&c={unsubscribe_code('secret-key', USER)}"
-    assert first["unsubscribe"] == link and link in first["text"]
-    assert mailbox.sent[1]["unsubscribe"] != link
+    # No "stop these emails" link for now.
+    assert all(m["unsubscribe"] == "" for m in mailbox.sent)
+    assert "Stop these emails" not in first["page"] and "unsubscribe" not in first["text"]
 
 
 def test_one_bad_address_does_not_stop_the_rest(client, world, mailbox):

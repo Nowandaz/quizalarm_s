@@ -363,10 +363,56 @@ async function pageDashboard(main) {
 
 // ------------------------------------------------------------ question bank
 
+/** Every row of a query. The database hands out at most 1000 rows at a
+ *  time, so this asks page after page ([build] makes the query afresh). */
+async function allRows(build) {
+  if (CONFIG.demo) return ok(await build());
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const page = ok(await build().range(from, from + 999));
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
+}
+
+/** Runs [search] a moment after the last key press, newest request wins. */
+function searchBox(placeholder, search) {
+  let timer = null;
+  let turn = 0;
+  return h('input', { type: 'search', class: 'grow', style: 'max-width:520px', placeholder, oninput: (e) => {
+    clearTimeout(timer);
+    const text = e.target.value.trim();
+    const mine = ++turn;
+    timer = setTimeout(() => search(text, () => mine === turn), text ? 250 : 0);
+  } });
+}
+
+/** Questions whose text or answer contains [text] (up to 40), optionally
+ *  only in [topicIds]. */
+async function findQuestions(text, topicIds) {
+  if (CONFIG.demo) return [];
+  const like = `%${text.replace(/[%_\\]/g, (c) => `\\${c}`).replace(/[,()"]/g, ' ')}%`;
+  let query = db.from('questions').select('id, topic_id, type, text, answer, status, long_answer')
+    .is('deleted_at', null).or(`text.ilike.${like},answer.ilike.${like}`).order('topic_id').limit(40);
+  if (topicIds) query = query.in('topic_id', topicIds.concat('-'));
+  return ok(await query);
+}
+
+/** One found question: where it is, what it says, its answer. */
+function questionHit(x, topic, unitName) {
+  return h('div', { class: 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(topic.unit_id)}/${encodeURIComponent(topic.id)}`; } },
+    h('div', { class: 'muted small' }, [unitName, topic.name].filter(Boolean).join(' / ')),
+    h('div', { style: 'margin:4px 0;font-weight:600' }, x.text.length > 220 ? `${x.text.slice(0, 220)}...` : x.text),
+    h('div', { class: 'row small' },
+      h('span', { class: 'muted' }, `Answer: ${x.answer.length > 90 ? `${x.answer.slice(0, 90)}...` : x.answer}`),
+      x.long_answer && h('span', { class: 'pill' }, 'Long answer'),
+      x.status === 'draft' && h('span', { class: 'pill' }, 'Draft')));
+}
+
 async function pageBank(main) {
   const units = ok(await db.from('units').select('*').order('sort_order').order('name'));
-  const topics = ok(await db.from('topics').select('id, unit_id, deleted_at'));
-  const questions = ok(await db.from('questions').select('id, topic_id, status, image_path, deleted_at'));
+  const topics = ok(await db.from('topics').select('id, unit_id, name, deleted_at'));
+  const questions = await allRows(() => db.from('questions').select('id, topic_id, status, image_path, deleted_at').order('id'));
   const liveTopics = topics.filter((t) => !t.deleted_at);
   const of = (unitId) => {
     const ids = new Set(liveTopics.filter((t) => t.unit_id === unitId).map((t) => t.id));
@@ -374,12 +420,44 @@ async function pageBank(main) {
     return { topics: ids.size, questions: qs.length, drafts: qs.filter((q) => q.status === 'draft').length, pictures: qs.filter((q) => q.image_path).length };
   };
 
+  const grid = unitCards(units, of);
+  const found = h('div', {});
+  const unitName = (id) => (units.find((u) => u.id === id) || {}).name || '';
+  // What was typed is looked for in unit and topic names (here) and in
+  // question text and answers (in the database).
+  const find = async (text, current) => {
+    if (text.length < 2) { fill(found); grid.style.display = ''; return; }
+    const q = text.toLowerCase();
+    const hitUnits = units.filter((u) => u.name.toLowerCase().includes(q));
+    const hitTopics = liveTopics.filter((t) => t.name.toLowerCase().includes(q));
+    let hitQuestions = [];
+    try { hitQuestions = await findQuestions(text); } catch (error) { console.error(error); }
+    if (!current()) return;
+    const topicOf = (id) => liveTopics.find((t) => t.id === id);
+    grid.style.display = 'none';
+    fill(found,
+      hitUnits.length > 0 && [h('h3', { style: 'margin:0 0 8px' }, 'Units'), unitCards(hitUnits, of)],
+      hitTopics.length > 0 && [h('h3', { style: 'margin:16px 0 8px' }, `Topics (${hitTopics.length})`),
+        h('div', { class: 'list' }, hitTopics.slice(0, 40).map((t) => h('div', { class: 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(t.unit_id)}/${encodeURIComponent(t.id)}`; } },
+          h('div', { class: 'row spread' }, h('div', {}, h('div', { class: 'muted small' }, unitName(t.unit_id)), h('h3', {}, t.name)),
+            h('span', { class: 'small' }, h('b', {}, questions.filter((x) => !x.deleted_at && x.topic_id === t.id).length), ' questions')))))],
+      hitQuestions.length > 0 && [h('h3', { style: 'margin:16px 0 8px' }, `Questions (${hitQuestions.length === 40 ? 'first 40' : hitQuestions.length})`),
+        h('div', { class: 'list' }, hitQuestions.filter((x) => topicOf(x.topic_id)).map((x) => questionHit(x, topicOf(x.topic_id), unitName(topicOf(x.topic_id).unit_id))))],
+      hitUnits.length + hitTopics.length + hitQuestions.length === 0 && h('div', { class: 'card center muted' }, `Nothing matches "${text}".`));
+  };
+
   fill(main, 
     pageHead('Question bank', 'Units, their topics and questions. Changes reach the app the next time it syncs.',
       h('button', { onclick: () => importDialog() }, icon('upload'), 'Import a file'),
       h('button', { class: 'primary', onclick: () => unitDialog(null, units.length) }, icon('plus'), 'Add unit')),
+    h('div', { class: 'row', style: 'margin-bottom:14px' }, searchBox('Search units, topics and questions', find)),
+    found,
     units.length === 0 && h('div', { class: 'card center muted' }, 'No units yet. Add one, or import a bank file.'),
-    h('div', { class: 'grid wide' }, units.map((u) => {
+    grid);
+}
+
+function unitCards(units, of) {
+  return h('div', { class: 'grid wide' }, units.map((u) => {
       const n = of(u.id);
       return h('div', { class: u.deleted_at ? 'card click gone' : 'card click', onclick: () => { location.hash = `#/bank/${encodeURIComponent(u.id)}`; } },
         h('div', { class: 'row spread' },
@@ -393,7 +471,7 @@ async function pageBank(main) {
           h('span', {}, h('b', {}, n.questions), ' questions'),
           n.pictures > 0 && h('span', { class: 'muted' }, `${n.pictures} with a picture`),
           n.drafts > 0 && h('span', { class: 'pill' }, `${n.drafts} draft${n.drafts === 1 ? '' : 's'}`)));
-    })));
+    }));
 }
 
 function unitDialog(unit, nextOrder = 0) {
@@ -435,7 +513,7 @@ async function pageUnit(main, unitId) {
   if (!unit) { fill(main, h('p', {}, 'That unit does not exist.')); return; }
   const topics = ok(await db.from('topics').select('*').eq('unit_id', unitId).order('sort_order').order('name'));
   const sections = ok(await db.from('sections').select('*').eq('unit_id', unitId).is('deleted_at', null).order('sort_order').order('name'));
-  const questions = ok(await db.from('questions').select('id, topic_id, status, image_path, deleted_at').in('topic_id', topics.map((t) => t.id).concat('-')));
+  const questions = await allRows(() => db.from('questions').select('id, topic_id, status, image_path, deleted_at').in('topic_id', topics.map((t) => t.id).concat('-')).order('id'));
   const of = (topicId) => questions.filter((q) => q.topic_id === topicId && !q.deleted_at);
   const most = Math.max(1, ...topics.map((t) => of(t.id).length));
   const subunits = sections.filter((x) => x.kind === 'subunit');
@@ -471,6 +549,25 @@ async function pageUnit(main, unitId) {
       mine.length === 0 ? h('div', { class: 'muted small', style: 'padding:6px 2px 10px' }, 'No topics in this section yet.') : h('div', { class: 'list' }, mine.map(topicRow)));
   };
 
+  const tree = h('div', {});
+  const found = h('div', {});
+  const sectionName = (t) => (sections.find((x) => x.id === t.section_id) || {}).name || '';
+  const find = async (text, current) => {
+    if (text.length < 2) { fill(found); tree.style.display = ''; return; }
+    const q = text.toLowerCase();
+    const hitTopics = topics.filter((t) => t.name.toLowerCase().includes(q) || sectionName(t).toLowerCase().includes(q));
+    let hitQuestions = [];
+    try { hitQuestions = await findQuestions(text, topics.map((t) => t.id)); } catch (error) { console.error(error); }
+    if (!current()) return;
+    const topicOf = (id) => topics.find((t) => t.id === id);
+    tree.style.display = 'none';
+    fill(found,
+      hitTopics.length > 0 && [h('h3', { style: 'margin:0 0 8px' }, `Topics (${hitTopics.length})`), h('div', { class: 'list' }, hitTopics.map(topicRow))],
+      hitQuestions.length > 0 && [h('h3', { style: 'margin:16px 0 8px' }, `Questions (${hitQuestions.length === 40 ? 'first 40' : hitQuestions.length})`),
+        h('div', { class: 'list' }, hitQuestions.filter((x) => topicOf(x.topic_id)).map((x) => questionHit(x, topicOf(x.topic_id), sectionName(topicOf(x.topic_id)))))],
+      hitTopics.length + hitQuestions.length === 0 && h('div', { class: 'card center muted' }, `Nothing matches "${text}".`));
+  };
+
   fill(main,
     h('div', { class: 'crumbs' }, h('a', { href: '#/bank' }, 'Question bank'), ' / ', unit.name),
     pageHead(unit.name,
@@ -480,7 +577,11 @@ async function pageUnit(main, unitId) {
       h('button', { onclick: () => sectionDialog(unit, { kind: 'subunit', sort_order: subunits.length }, subunits, 0) }, icon('plus'), 'Sub unit'),
       h('button', { class: 'primary', onclick: () => sectionDialog(unit, { kind: 'section', sort_order: plain.length }, subunits, 0) }, icon('plus'), 'Section')),
     h('p', { class: 'muted small', style: 'margin:-6px 0 14px' }, 'A unit holds sections, and each section holds topics with their questions. Large units can group their sections into sub units (Pathology: Haematology, Immunology...).'),
+    topics.length > 0 && h('div', { class: 'row', style: 'margin-bottom:14px' }, searchBox(`Search topics and questions in ${unit.name}`, find)),
+    found,
     sections.length === 0 && topics.length === 0 && h('div', { class: 'card center muted' }, 'Nothing here yet. Start with a section.'),
+    tree);
+  fill(tree,
     subunits.map((sub) => {
       const inside = plain.filter((x) => x.parent_id === sub.id);
       const all = inside.flatMap((x) => topicsIn(x.id));
@@ -1485,7 +1586,7 @@ async function pageEmails(main) {
       h('p', { class: 'small muted', style: 'margin:6px 0 0' }, 'Add SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASSWORD to the file api\\.env on your laptop (api\\.env.example shows how), then deploy with: deploy\\push.ps1 -Server <address> -WithEnv')),
     h('div', { class: 'card stack', style: 'margin-bottom:12px' },
       h('h3', {}, 'New email'),
-      ready && h('p', { class: 'small muted', style: 'margin:0' }, `Sent from ${status.from}, one copy per person. Up to ${status.max_recipients} people a day (the mailbox's limit). People who unsubscribed are left out.`),
+      ready && h('p', { class: 'small muted', style: 'margin:0' }, `Sent from ${status.from}, one copy per person. Up to ${status.max_recipients} people a day (the mailbox's limit).`),
       field('Who gets it', audience), versionField, typedField, count,
       field('Subject', subject),
       field('Message', body, 'Plain words. Leave an empty line between paragraphs.'),
